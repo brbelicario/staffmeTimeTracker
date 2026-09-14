@@ -45,10 +45,11 @@ export async function onRequest(context) {
   const env = context.env;
 
   if (request.method === 'OPTIONS') return json({}, 204);
-  if (!env.DB) {
+  const db = env.DB || env.db;
+  if (!db) {
     return json({
       ok: false,
-      error: 'Cloud sync is not configured. Add a D1 binding named DB to this Pages project.'
+      error: 'Cloud sync is not configured. Add a D1 binding named DB or db to this Pages project.'
     }, 503);
   }
 
@@ -72,11 +73,11 @@ export async function onRequest(context) {
     return json({ ok: false, error: 'A valid email is required.' }, 400);
   }
 
-  await ensureTable(env.DB);
+  await ensureTable(db);
   const key = await profileKey(email);
 
   if (request.method === 'GET') {
-    const record = await env.DB.prepare(
+    const record = await db.prepare(
       'SELECT settings_json, rows_json, last_sync, updated_at FROM tracker_profiles WHERE profile_key = ?'
     ).bind(key).first();
 
@@ -107,7 +108,7 @@ export async function onRequest(context) {
   }
 
   const updatedAt = new Date().toISOString();
-  await env.DB.prepare(`
+  await db.prepare(`
     INSERT INTO tracker_profiles (profile_key, settings_json, rows_json, last_sync, updated_at)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(profile_key) DO UPDATE SET
