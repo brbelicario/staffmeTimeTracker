@@ -197,32 +197,57 @@
     }, "*");
   }
 
-  async function scanStaffMe(root) {
-    const rows = readHourlyRows(root);
+  async function storeRows(rows, tableFound) {
+    const normalizedRows = (Array.isArray(rows) ? rows : [])
+      .filter((row) => row && row.date && row.time)
+      .map((row) => ({
+        date: clean(row.date),
+        time: clean(row.time),
+        agent: clean(row.agent),
+        workedHours: numberValue(row.workedHours),
+        evaluations: numberValue(row.evaluations),
+        chat: numberValue(row.chat),
+        idcheck: numberValue(row.idcheck),
+        stream: numberValue(row.stream)
+      }));
+
     const current = await chrome.storage.local.get([
       STORAGE_KEY,
       LAST_SYNC_KEY
     ]);
-    const merged = dedupe((current[STORAGE_KEY] || []).concat(rows));
+    const merged = dedupe((current[STORAGE_KEY] || []).concat(normalizedRows));
     const now = new Date().toISOString();
     const status = {
       installed: true,
-      tableFound: Boolean(root),
-      parsedRows: rows.length,
+      tableFound: Boolean(tableFound),
+      parsedRows: normalizedRows.length,
       storedRows: merged.length,
+      source: normalizedRows.length ? "staffme-network" : "staffme-dom",
       scannedAt: now
     };
 
     await chrome.storage.local.set({
       [STORAGE_KEY]: merged,
-      [LAST_SYNC_KEY]: rows.length ? now : (current[LAST_SYNC_KEY] || null),
+      [LAST_SYNC_KEY]: normalizedRows.length ? now : (current[LAST_SYNC_KEY] || null),
       [STATUS_KEY]: status
     });
 
     postStatus(status);
   }
 
+  async function scanStaffMe(root) {
+    await storeRows(readHourlyRows(root), Boolean(root));
+  }
+
   if (isStaffMePage) {
+    window.addEventListener("message", async (event) => {
+      if (event.source !== window || !event.data) return;
+      if (event.data.type !== "STAFFME_NETWORK_ROWS") return;
+      await storeRows(event.data.rows || [], true);
+    });
+
+    window.postMessage({ type: "STAFFME_REQUEST_NETWORK_DATA" }, "*");
+
     let lastText = "";
     const scan = async () => {
       const root = findHourlyRoot();
