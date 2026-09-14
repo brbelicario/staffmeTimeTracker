@@ -222,7 +222,7 @@
       <div>StaffMe Time Tracker<small>Hourly work dashboard</small></div>
     </div>
     <div class="top-actions" id="topActions" hidden>
-      <button class="btn btn-quiet" id="logoutBtn">Change email</button>
+      <button class="btn btn-quiet" id="logoutBtn">Sign out</button>
     </div>
   </header>
 
@@ -231,14 +231,11 @@
       <div class="login-card">
         <div class="eyebrow">Private tracker prototype</div>
         <h1>See every hour clearly.</h1>
-        <p class="intro">Enter your work email to open a local tracker profile. Configure your duty schedule, choose adherence days, and compare each week against your targets.</p>
-        <form id="loginForm">
-          <div class="form-row">
-            <input id="emailInput" type="email" placeholder="you@company.com" autocomplete="email" required>
-            <button class="btn btn-primary" type="submit">Open tracker</button>
-          </div>
-        </form>
-        <div class="note"><span>●</span><div><strong>StaffMe data only.</strong> This test dashboard starts empty and fills only with hourly rows captured from StaffMe in the same browser. It never asks for your password or reads callback tokens.</div></div>
+        <p class="intro">Sign in with your Google account to open your private tracker profile. Configure your duty schedule, choose adherence days, and keep your statistics across devices.</p>
+        <div class="form-row">
+          <button class="btn btn-primary" id="googleLoginBtn" type="button">Continue with Google</button>
+        </div>
+        <div class="note"><span>●</span><div><strong>Passwordless account.</strong> Google verifies your identity. The tracker never asks for or stores your StaffMe password. Hourly rows are captured only from StaffMe and saved to your account.</div></div>
       </div>
     </section>
 
@@ -339,7 +336,8 @@
       source: 'waiting',
       lastSync: null,
       helperStatus: null,
-      remoteStatus: 'unknown'
+      remoteStatus: 'unknown',
+      user: null
     };
 
     let remoteSaveTimer = null;
@@ -371,7 +369,7 @@
       state.remoteStatus = 'loading';
       render();
       try {
-        const response = await fetch('/api/sync?email=' + encodeURIComponent(state.email), { cache: 'no-store' });
+        const response = await fetch('/api/sync', { cache: 'no-store' });
         if (!response.ok) throw new Error('Cloud sync unavailable');
         const remote = await response.json();
         if (remote.found) {
@@ -948,29 +946,38 @@
       });
     }
 
-    document.getElementById('loginForm').addEventListener('submit', function(event) {
-      event.preventDefault();
-      const email = document.getElementById('emailInput').value.trim().toLowerCase();
-      if (!email) return;
-      state.email = email;
-      if (!loadProfile(email)) {
-        state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-        state.rows = [];
-        state.source = 'waiting';
-        state.lastSync = null;
-        state.helperStatus = null;
+    async function restoreSession() {
+      try {
+        const response = await fetch('/api/auth?mode=me', { cache: 'no-store' });
+        if (!response.ok) return;
+        const result = await response.json();
+        state.user = result.user;
+        state.email = String(result.user.email || '').toLowerCase();
+        if (!loadProfile(state.email)) {
+          state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+          state.rows = [];
+          state.source = 'waiting';
+          state.lastSync = null;
+          state.helperStatus = null;
+          saveProfile();
+        }
         state.remoteStatus = 'loading';
-        saveProfile();
-      }
-      render();
-      window.setTimeout(function() {
-        requestStaffMeRows();
-        pullRemoteProfile();
-      }, 150);
+        render();
+        window.setTimeout(function() {
+          requestStaffMeRows();
+          pullRemoteProfile();
+        }, 150);
+      } catch (error) {}
+    }
+
+    document.getElementById('googleLoginBtn').addEventListener('click', function() {
+      window.location.href = '/api/auth?mode=start';
     });
 
     document.getElementById('logoutBtn').addEventListener('click', function() {
+      fetch('/api/auth?mode=logout', { cache: 'no-store' }).catch(function() {});
       state.email = '';
+      state.user = null;
       state.helperStatus = null;
       state.remoteStatus = 'unknown';
       closeModal();
@@ -1021,9 +1028,8 @@
       }
     });
 
-    window.setTimeout(requestStaffMeRows, 900);
-
     render();
+    restoreSession();
   </script>
 </body>
 </html>
