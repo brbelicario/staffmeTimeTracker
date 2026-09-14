@@ -216,7 +216,7 @@
             <button class="btn btn-primary" type="submit">Open tracker</button>
           </div>
         </form>
-        <div class="note"><span>●</span><div><strong>Prototype mode.</strong> The live StaffMe bridge will be added separately. This page currently uses local demo data or hourly JSON you import for testing.</div></div>
+        <div class="note"><span>●</span><div><strong>StaffMe data only.</strong> This test dashboard starts empty and fills only with hourly rows captured from StaffMe in the same browser. It never asks for your password or reads callback tokens.</div></div>
       </div>
     </section>
 
@@ -228,14 +228,14 @@
           <div class="profile-line"><span class="profile-dot"></span><span id="profileEmail"></span><span>·</span><span id="weekRange"></span></div>
         </div>
         <div class="head-actions">
-          <button class="btn" id="importBtn">Import hourly data</button>
+          <button class="btn" id="refreshBtn">Refresh StaffMe data</button>
           <button class="btn btn-cyan" id="settingsBtn">Schedule settings</button>
         </div>
       </div>
 
       <div class="sync-banner">
-        <div><strong>StaffMe bridge not connected yet</strong><span id="syncDetail">Use demo data now, or import a captured hourly response to test the calculations.</span></div>
-        <div class="sync-status" id="syncStatus">LOCAL DATA</div>
+        <div><strong id="syncTitle">Waiting for StaffMe hourly data</strong><span id="syncDetail">Keep the StaffMe Hourly AHT table open, then refresh this dashboard.</span></div>
+        <div class="sync-status" id="syncStatus">WAITING</div>
       </div>
 
       <div class="metric-grid" id="metricGrid"></div>
@@ -260,14 +260,13 @@
       <section class="panel full-panel">
         <div class="panel-head">
           <div><div class="week-label">Daily breakdown</div><h2>Adherence and coverage by shift</h2><p>Weekend adherence days are editable in Schedule settings.</p></div>
-          <button class="btn" id="demoBtn">Reload demo data</button>
         </div>
         <div class="table-scroll"><table class="day-table"><thead><tr><th>Shift date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Imported source rows</div><h2>Hourly data preview</h2><p>The live bridge will send rows in this same format.</p></div>
+          <div><div class="week-label">StaffMe source rows</div><h2>Hourly data preview</h2><p>Only hourly rows captured from StaffMe appear here.</p></div>
           <span class="tag tag-neutral" id="rowCount"></span>
         </div>
         <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Worked</th><th>Evaluations</th><th>Chat</th><th>ID check</th><th>Stream</th></tr></thead><tbody id="hourRows"></tbody></table></div>
@@ -290,7 +289,8 @@
       email: '',
       settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
       rows: [],
-      source: 'demo'
+      source: 'waiting',
+      lastSync: null
     };
 
     function profileKey(email) {
@@ -301,7 +301,8 @@
       localStorage.setItem(profileKey(state.email), JSON.stringify({
         settings: state.settings,
         rows: state.rows,
-        source: state.source
+        source: state.source,
+        lastSync: state.lastSync
       }));
     }
 
@@ -312,8 +313,15 @@
         const saved = JSON.parse(raw);
         state.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), saved.settings || {});
         state.settings.targets = Object.assign({}, DEFAULT_SETTINGS.targets, (saved.settings || {}).targets || {});
-        state.rows = normalizeRows(saved.rows || []);
-        state.source = saved.source || 'local';
+        const savedSource = saved.source || 'local';
+        const savedRows = normalizeRows(saved.rows || []);
+        const isDemoProfile = savedSource === 'demo' || savedRows.some(function(row) {
+          return String(row.agent || '').toLowerCase() === 'demo agent';
+        });
+        state.rows = isDemoProfile ? [] : savedRows;
+        state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
+        state.lastSync = saved.lastSync || null;
+        if (isDemoProfile) saveProfile();
         return true;
       } catch (error) {
         return false;
@@ -521,13 +529,20 @@
       document.getElementById('profileEmail').textContent = state.email;
       document.getElementById('weekRange').textContent = formatDate(summary.start) + ' – ' + formatDate(end);
       document.getElementById('weekTitle').textContent = 'Week of ' + formatDate(summary.start);
-      document.getElementById('syncStatus').textContent = state.source === 'demo' ? 'DEMO DATA' : 'LOCAL IMPORT';
-      document.getElementById('syncDetail').textContent = state.source === 'demo'
-        ? 'Demo hourly rows are loaded. Import StaffMe hourly JSON to test with your own response.'
-        : 'Hourly rows are stored in this browser and deduplicated by date, time, and metrics.';
+      const hasRows = state.rows.length > 0;
+      const sourceLabel = state.source === 'helper' ? 'STAFFME DATA' : (hasRows ? 'STORED STAFFME' : 'WAITING');
+      document.getElementById('syncTitle').textContent = hasRows
+        ? 'StaffMe hourly data is loaded'
+        : 'Waiting for StaffMe hourly data';
+      document.getElementById('syncStatus').textContent = sourceLabel;
+      document.getElementById('syncDetail').textContent = hasRows
+        ? (state.lastSync
+          ? state.rows.length + ' hourly rows received from StaffMe. Last sync ' + new Date(state.lastSync).toLocaleString() + '.'
+          : state.rows.length + ' hourly rows are stored in this browser.')
+        : 'Keep the StaffMe Hourly AHT table open, then click Refresh StaffMe data. No demo rows are used.';
 
       const cards = [
-        { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'All imported hours' },
+        { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'All StaffMe hourly rows' },
         { name: 'InCoverage Hours', value: summary.coverage, target: state.settings.targets.coverage, className: 'orange', note: 'Non-adherence duty hours' },
         { name: 'Weekend Hours', value: summary.weekend, target: state.settings.targets.weekend, className: 'green', note: 'Selected adherence days' }
       ];
@@ -561,7 +576,7 @@
         '<div class="setup-item"><span>Duty window</span><strong>' + state.settings.start + ' – ' + state.settings.end + '</strong></div>' +
         '<div class="setup-item"><span>Adherence days</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
-        '<div class="setup-item"><span>Rows saved</span><strong>' + state.rows.length + '</strong></div>';
+        '<div class="setup-item"><span>Rows from StaffMe</span><strong>' + state.rows.length + '</strong></div>';
 
       document.getElementById('dayRows').innerHTML = summary.groups.length ? summary.groups.map(function(group) {
         const category = categoryFor(group.date);
@@ -576,40 +591,7 @@
       document.getElementById('rowCount').textContent = state.rows.length + ' rows';
       document.getElementById('hourRows').innerHTML = preview.length ? preview.map(function(row) {
         return '<tr><td>' + formatDate(row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + '</td><td>' + row.evaluations + '</td><td>' + row.chat + '</td><td>' + row.idcheck + '</td><td>' + row.stream + '</td></tr>';
-      }).join('') : '<tr><td colspan="7"><div class="empty">Import hourly rows to populate this table.</div></td></tr>';
-    }
-
-    function makeDemoRows() {
-      const result = [];
-      const values = [0.86, 1, 1, 0.92, 1, 1, 0.96, 0.74, 0.18];
-      const shifts = [
-        ['2026-09-10', 7.66],
-        ['2026-09-11', 8.31],
-        ['2026-09-12', 7.42],
-        ['2026-09-13', 8.68],
-        ['2026-09-14', 8.91]
-      ];
-      shifts.forEach(function(item, shiftIndex) {
-        const shiftDate = parseDate(item[0]);
-        values.forEach(function(value, index) {
-          const hourDate = new Date(shiftDate);
-          hourDate.setHours(22 + index, 0, 0, 0);
-          const dateLabel = isoDate(hourDate);
-          const hour = hourDate.getHours();
-          const label = new Date(2000, 0, 1, hour, 0).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-          result.push({
-            date: dateLabel,
-            time: label,
-            agent: 'Demo Agent',
-            workedHours: value,
-            evaluations: 62 + shiftIndex * 7 + index,
-            chat: 12 + index,
-            idcheck: 8 + (index % 4),
-            stream: 30 + shiftIndex * 2
-          });
-        });
-      });
-      return result;
+      }).join('') : '<tr><td colspan="7"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
     }
 
     function showToast(message) {
@@ -659,32 +641,6 @@
       });
     }
 
-    function openImport() {
-      const example = JSON.stringify(state.rows.slice(0, 2), null, 2);
-      document.getElementById('modalRoot').innerHTML =
-        '<div class="modal-backdrop" id="modalBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">Source import</div><h2>Import hourly data</h2><p class="muted">Paste an array of hourly row objects, or paste the raw <code>op.exec</code> response.</p></div><button class="close" id="closeModal">×</button></div>' +
-          '<form id="importForm"><div class="field"><textarea id="importText" placeholder="Paste JSON here">' + example.replace(/</g, '&lt;') + '</textarea><div class="field-help">Expected fields include date, time, and workedHours. Optional fields: totalEvaluations, chat, idcheck, and stream.</div></div><div class="modal-actions"><button type="button" class="btn" id="cancelImport">Cancel</button><button type="submit" class="btn btn-primary">Import rows</button></div></form>' +
-        '</div></div>';
-      document.getElementById('closeModal').addEventListener('click', closeModal);
-      document.getElementById('cancelImport').addEventListener('click', closeModal);
-      document.getElementById('modalBackdrop').addEventListener('click', function(event) { if (event.target.id === 'modalBackdrop') closeModal(); });
-      document.getElementById('importForm').addEventListener('submit', function(event) {
-        event.preventDefault();
-        try {
-          const imported = parseImportedText(document.getElementById('importText').value);
-          state.rows = dedupeRows(state.rows.concat(imported));
-          state.source = 'import';
-          saveProfile();
-          closeModal();
-          render();
-          showToast(imported.length + ' hourly rows imported.');
-        } catch (error) {
-          showToast('Import failed: ' + error.message);
-        }
-      });
-    }
-
     document.getElementById('loginForm').addEventListener('submit', function(event) {
       event.preventDefault();
       const email = document.getElementById('emailInput').value.trim().toLowerCase();
@@ -692,11 +648,13 @@
       state.email = email;
       if (!loadProfile(email)) {
         state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-        state.rows = makeDemoRows();
-        state.source = 'demo';
+        state.rows = [];
+        state.source = 'waiting';
+        state.lastSync = null;
         saveProfile();
       }
       render();
+      window.setTimeout(requestStaffMeRows, 150);
     });
 
     document.getElementById('logoutBtn').addEventListener('click', function() {
@@ -706,30 +664,37 @@
     });
 
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
-    document.getElementById('importBtn').addEventListener('click', openImport);
-    document.getElementById('demoBtn').addEventListener('click', function() {
-      state.rows = makeDemoRows();
-      state.source = 'demo';
-      saveProfile();
-      render();
-      showToast('Demo hourly rows reloaded.');
+
+    function requestStaffMeRows() {
+      window.postMessage({ type: 'STAFFME_REQUEST_DATA' }, '*');
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', function() {
+      requestStaffMeRows();
+      showToast('Requesting the latest StaffMe rows...');
     });
 
     window.addEventListener('message', function(event) {
-      if (!event.data || event.data.type !== 'STAFFME_HOURLY_DATA') return;
+      if (!state.email || !event.data || event.data.type !== 'STAFFME_HOURLY_DATA') return;
       try {
         const imported = normalizeRows(event.data.rows || []);
+        if (!imported.length) {
+          render();
+          showToast('No StaffMe hourly rows are available yet. Keep the Hourly AHT table open and try again.');
+          return;
+        }
         state.rows = dedupeRows(state.rows.concat(imported));
         state.source = 'helper';
+        state.lastSync = event.data.lastSync || new Date().toISOString();
         saveProfile();
         render();
-        showToast(imported.length + ' rows received from the StaffMe helper.');
+        showToast('StaffMe hourly rows refreshed.');
       } catch (error) {
-        showToast('Helper import failed.');
+        showToast('StaffMe data could not be read.');
       }
     });
 
-    window.setTimeout(function() { window.postMessage({ type: 'STAFFME_REQUEST_DATA' }, '*'); }, 900);
+    window.setTimeout(requestStaffMeRows, 900);
 
     render();
   </script>
