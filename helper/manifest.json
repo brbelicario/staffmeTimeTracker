@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "StaffMe Time Tracker Helper",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Captures the visible StaffMe hourly table locally for the time tracker.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://script.google.com/*",
+    "https://script.googleusercontent.com/*",
     "https://htmlpreview.github.io/*",
     "https://brbelicario.github.io/*",
     "https://raw.githubusercontent.com/*",
@@ -16,7 +17,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://script.google.com/*"
+        "https://script.google.com/*",
+        "https://script.googleusercontent.com/*"
       ],
       "js": [
         "content.js"
