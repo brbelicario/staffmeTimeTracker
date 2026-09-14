@@ -229,6 +229,8 @@
     .calendar-number { display: block; font-weight: 900; font-size: .82rem; }
     .calendar-label { display: block; margin-top: 6px; color: var(--muted); font-size: .65rem; font-weight: 800; }
     .calendar-hours { display: block; margin-top: 4px; font-size: .7rem; font-weight: 900; }
+    .calendar-manual { display: block; margin-top: 3px; color: #8a5b2d; font-size: .62rem; font-weight: 850; }
+    .breakdown-detail { display: block; margin-top: 3px; color: var(--muted); font-size: .68rem; line-height: 1.35; }
     .calendar-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; color: var(--muted); font-size: .72rem; font-weight: 800; }
     .calendar-legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; background: #edf0f4; }
     .calendar-legend .legend-adherence::before { background: #55b87e; }
@@ -453,7 +455,7 @@
         <div class="panel-head">
           <div><div class="week-label">Agreement daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the agreement term.</p></div>
         </div>
-        <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead><tbody id="dayRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend adherence</th><th>Manual / Other Task</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
@@ -645,19 +647,32 @@
       trackedItems().forEach(function(item) {
         const date = item.date;
         if (!date || (range && !dateInRange(date, range))) return;
-        const value = item.value;
-        work += value;
+        const metrics = itemMetrics(item);
         const key = isoDate(date);
-        if (!groups.has(key)) groups.set(key, { date: date, total: 0, coverage: 0, adherence: 0 });
-        const group = groups.get(key);
-        group.total += value;
-        if (item.coverage) {
-          coverage += value;
-          group.coverage += value;
+        work += metrics.value;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            date: date,
+            total: 0,
+            coverage: 0,
+            adherence: 0,
+            manual: 0,
+            manualCoverage: 0,
+            manualAdherence: 0,
+            manualOutside: 0
+          });
         }
-        if (item.adherence) {
-          adherence += value;
-          group.adherence += value;
+        const group = groups.get(key);
+        group.total += metrics.value;
+        coverage += metrics.coverage;
+        group.coverage += metrics.coverage;
+        adherence += metrics.adherence;
+        group.adherence += metrics.adherence;
+        if (item.source === 'manual') {
+          group.manual += metrics.value;
+          group.manualCoverage += metrics.coverage;
+          group.manualAdherence += metrics.adherence;
+          group.manualOutside += metrics.outside;
         }
       });
 
@@ -674,14 +689,31 @@
         end.setDate(end.getDate() + 6);
         if (end > range.end) end.setTime(range.end.getTime());
 
-        const week = { index: index, start: new Date(start), end: new Date(end), work: 0, coverage: 0, adherence: 0 };
+        const week = {
+          index: index,
+          start: new Date(start),
+          end: new Date(end),
+          work: 0,
+          coverage: 0,
+          adherence: 0,
+          manual: 0,
+          manualCoverage: 0,
+          manualAdherence: 0,
+          manualOutside: 0
+        };
         trackedItems().forEach(function(item) {
           const date = item.date;
           if (!date || date < week.start || date > week.end) return;
-          const value = item.value;
-          week.work += value;
-          if (item.coverage) week.coverage += value;
-          if (item.adherence) week.adherence += value;
+          const metrics = itemMetrics(item);
+          week.work += metrics.value;
+          week.coverage += metrics.coverage;
+          week.adherence += metrics.adherence;
+          if (item.source === 'manual') {
+            week.manual += metrics.value;
+            week.manualCoverage += metrics.coverage;
+            week.manualAdherence += metrics.adherence;
+            week.manualOutside += metrics.outside;
+          }
         });
         weeks.push(week);
         start = new Date(end);
@@ -761,9 +793,9 @@
         return;
       }
 
-      const hoursByDate = new Map();
+      const groupsByDate = new Map();
       contractAggregate(range).groups.forEach(function(group) {
-        hoursByDate.set(isoDate(group.date), group.total);
+        groupsByDate.set(isoDate(group.date), group);
       });
 
       const monthBlocks = [];
@@ -784,16 +816,22 @@
           const inTerm = dateInRange(date, range);
           const category = inTerm ? categoryFor(date) : 'outside';
           const key = isoDate(date);
-          const actual = inTerm && hoursByDate.has(key) ? '<span class="calendar-hours">' + hours(hoursByDate.get(key)) + 'h worked</span>' : '';
+          const group = inTerm ? groupsByDate.get(key) : null;
+          const actual = group && group.total > 0
+            ? '<span class="calendar-hours">' + hours(group.total) + 'h worked</span>'
+            : '';
+          const manual = group && group.manual > 0
+            ? '<span class="calendar-manual" title="' + escapeHtml(manualGroupBreakdown(group)) + '">+' + hours(group.manual) + 'h manual</span>'
+            : '';
           const label = category === 'adherence' ? 'Adherence' : category === 'coverage' ? 'Coverage' : 'Outside term';
-          cells.push('<div class="calendar-day ' + category + '"><span class="calendar-number">' + day + '</span><span class="calendar-label">' + label + '</span>' + actual + '</div>');
+          cells.push('<div class="calendar-day ' + category + '"><span class="calendar-number">' + day + '</span><span class="calendar-label">' + label + '</span>' + actual + manual + '</div>');
         }
 
         monthBlocks.push('<div class="calendar-month"><h3>' + first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + '</h3><div class="calendar-grid">' + cells.join('') + '</div></div>');
         cursor.setMonth(cursor.getMonth() + 1);
       }
 
-      root.innerHTML = '<div class="calendar-legend"><span class="legend-adherence">Adherence day</span><span class="legend-coverage">Coverage day</span><span class="legend-outside">Outside agreement</span></div>' + monthBlocks.join('');
+      root.innerHTML = '<div class="calendar-legend"><span class="legend-adherence">Adherence day</span><span class="legend-coverage">Coverage day</span><span class="legend-outside">Outside agreement</span><span class="legend-manual">Manual / Other Task</span></div>' + monthBlocks.join('');
     }
 
     function isoDate(date) {
@@ -1124,6 +1162,33 @@
       return state.settings.adherenceDays.indexOf(date.getDay()) >= 0 ? 'adherence' : 'coverage';
     }
 
+    function itemMetrics(item) {
+      const parsedValue = Number(item && item.value);
+      const value = Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : 0;
+      const rawCoverage = item && typeof item.coverage === 'boolean'
+        ? (item.coverage ? value : 0)
+        : Number(item && item.coverage);
+      const coverage = Math.min(value, Math.max(0, Number.isFinite(rawCoverage) ? rawCoverage : 0));
+      const rawAdherence = item && typeof item.adherence === 'boolean'
+        ? (item.adherence ? coverage : 0)
+        : Number(item && item.adherence);
+      const adherence = Math.min(coverage, Math.max(0, Number.isFinite(rawAdherence) ? rawAdherence : 0));
+      return {
+        value: value,
+        coverage: coverage,
+        adherence: adherence,
+        outside: Math.max(0, value - coverage)
+      };
+    }
+
+    function manualGroupBreakdown(group) {
+      const parts = [];
+      if (Number(group.manualCoverage || 0) > 0) parts.push(hours(group.manualCoverage) + 'h coverage');
+      if (Number(group.manualAdherence || 0) > 0) parts.push(hours(group.manualAdherence) + 'h adherence');
+      if (Number(group.manualOutside || 0) > 0) parts.push(hours(group.manualOutside) + 'h outside');
+      return parts.length ? parts.join(' · ') : 'Manual hours';
+    }
+
     function trackedItems() {
       const items = [];
       state.rows.forEach(function(row) {
@@ -1134,9 +1199,9 @@
           source: 'staffme',
           key: 'staffme:' + rowKey(row),
           date: date,
-          value: Number(row.workedHours || 0),
-          coverage: coverage,
-          adherence: coverage && categoryFor(date) === 'adherence',
+          value: Math.max(0, Number(row.workedHours || 0)),
+          coverage: coverage ? Math.max(0, Number(row.workedHours || 0)) : 0,
+          adherence: coverage && categoryFor(date) === 'adherence' ? Math.max(0, Number(row.workedHours || 0)) : 0,
           row: row
         });
       });
@@ -1148,9 +1213,9 @@
           source: 'manual',
           key: 'manual:' + entry.id,
           date: date,
-          value: Number(entry.hours || 0),
-          coverage: Number(entry.coverageHours || 0),
-          adherence: Number(entry.adherenceHours || 0),
+          value: Math.max(0, Number(entry.hours || 0)),
+          coverage: Math.max(0, Number(entry.coverageHours || 0)),
+          adherence: Math.max(0, Number(entry.adherenceHours || 0)),
           entry: entry
         });
       });
@@ -1168,19 +1233,32 @@
       trackedItems().forEach(function(item) {
         const date = item.date;
         if (!date || (range && (range.invalid || !dateInRange(date, range))) || !isInWeek(date, start)) return;
-        const value = item.value;
-        work += value;
+        const metrics = itemMetrics(item);
         const key = isoDate(date);
-        if (!groups.has(key)) groups.set(key, { date: date, total: 0, coverage: 0, weekend: 0 });
-        const group = groups.get(key);
-        group.total += value;
-        if (item.coverage) {
-          coverage += value;
-          group.coverage += value;
+        work += metrics.value;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            date: date,
+            total: 0,
+            coverage: 0,
+            weekend: 0,
+            manual: 0,
+            manualCoverage: 0,
+            manualAdherence: 0,
+            manualOutside: 0
+          });
         }
-        if (item.adherence) {
-          weekend += value;
-          group.weekend += value;
+        const group = groups.get(key);
+        group.total += metrics.value;
+        coverage += metrics.coverage;
+        group.coverage += metrics.coverage;
+        weekend += metrics.adherence;
+        group.weekend += metrics.adherence;
+        if (item.source === 'manual') {
+          group.manual += metrics.value;
+          group.manualCoverage += metrics.coverage;
+          group.manualAdherence += metrics.adherence;
+          group.manualOutside += metrics.outside;
         }
       });
 
@@ -1547,8 +1625,11 @@
         const classification = group.adherence > 0 ? 'adherence' : group.coverage > 0 ? 'coverage' : 'outside';
         const tagClass = classification === 'adherence' ? 'tag-adherence' : classification === 'coverage' ? 'tag-coverage' : 'tag-neutral';
         const tagLabel = classification === 'adherence' ? 'Adherence' : classification === 'coverage' ? 'Coverage' : 'Outside duty';
-        return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + tagClass + '">' + tagLabel + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(group.adherence) + 'h</td></tr>';
-      }).join('') : '<tr><td colspan="5"><div class="empty">No rows found for the selected week.</div></td></tr>';
+        const manual = group.manual > 0
+          ? '<span class="tag tag-neutral">' + hours(group.manual) + 'h</span><span class="breakdown-detail">' + manualGroupBreakdown(group) + '</span>'
+          : '<span class="muted">—</span>';
+        return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + tagClass + '">' + tagLabel + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(group.adherence) + 'h</td><td>' + manual + '</td></tr>';
+      }).join('') : '<tr><td colspan="6"><div class="empty">No rows found for the selected week.</div></td></tr>';
 
       const preview = state.rows.slice().sort(function(a, b) {
         return rowTimestamp(b) - rowTimestamp(a) || rowKey(b).localeCompare(rowKey(a));
