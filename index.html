@@ -157,6 +157,27 @@
     .setup-item:last-child { border-bottom: 0; }
     .setup-item span { color: var(--muted); font-size: .8rem; }
     .setup-item strong { text-align: right; font-size: .83rem; }
+    .contract-total-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .contract-total { background: #f7f9fc; border: 1px solid #edf0f4; border-radius: 14px; padding: 16px; }
+    .contract-total span { display: block; color: var(--muted); font-size: .78rem; font-weight: 800; }
+    .contract-total strong { display: block; margin-top: 8px; font-size: 1.35rem; }
+    .contract-week-table { margin-top: 18px; }
+    .calendar-month { margin-top: 18px; }
+    .calendar-month h3 { margin: 0 0 10px; font-size: 1rem; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+    .calendar-weekday { color: var(--muted); font-size: .68rem; font-weight: 900; text-align: center; padding: 4px 0; }
+    .calendar-day { min-height: 68px; border: 1px solid #edf0f4; border-radius: 10px; padding: 8px; background: #fbfcfe; }
+    .calendar-day.adherence { background: #e9f7ef; border-color: #55b87e; }
+    .calendar-day.coverage { background: #fff5ed; border-color: #f0a36b; }
+    .calendar-day.outside { opacity: .35; background: #f5f6f8; }
+    .calendar-number { display: block; font-weight: 900; font-size: .82rem; }
+    .calendar-label { display: block; margin-top: 6px; color: var(--muted); font-size: .65rem; font-weight: 800; }
+    .calendar-hours { display: block; margin-top: 4px; font-size: .7rem; font-weight: 900; }
+    .calendar-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; color: var(--muted); font-size: .72rem; font-weight: 800; }
+    .calendar-legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; background: #edf0f4; }
+    .calendar-legend .legend-adherence::before { background: #55b87e; }
+    .calendar-legend .legend-coverage::before { background: #f0a36b; }
+    .calendar-legend .legend-outside::before { background: #cbd2db; }
     .full-panel { margin-top: 16px; }
     .table-scroll { overflow-x: auto; }
     .empty { padding: 24px 8px; text-align: center; color: var(--muted); }
@@ -259,7 +280,27 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Daily breakdown</div><h2>Adherence and coverage by shift</h2><p>Weekend adherence days are editable in Schedule settings.</p></div>
+          <div><div class="week-label">Agreement term totals</div><h2 id="contractTitle">Agreement term not set</h2><p id="contractSubtitle">Enter the agreement dates in Schedule settings to calculate the contract calendar.</p></div>
+        </div>
+        <div class="contract-total-grid" id="contractSummary"></div>
+        <div class="table-scroll">
+          <table class="day-table contract-week-table">
+            <thead><tr><th>Agreement week</th><th>Date range</th><th>Work hours</th><th>In coverage</th><th>Adherence</th></tr></thead>
+            <tbody id="contractWeekRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel full-panel">
+        <div class="panel-head">
+          <div><div class="week-label">Agreement calendar</div><h2>Adherence calendar</h2><p>Each shift is classified by its start date. Overnight hours after midnight stay with that shift.</p></div>
+        </div>
+        <div id="contractCalendar"></div>
+      </section>
+
+      <section class="panel full-panel">
+        <div class="panel-head">
+          <div><div class="week-label">Agreement daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the agreement term.</p></div>
         </div>
         <div class="table-scroll"><table class="day-table"><thead><tr><th>Shift date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
@@ -281,6 +322,8 @@
     const DEFAULT_SETTINGS = {
       start: '22:00',
       end: '07:00',
+      contractStart: '',
+      contractEnd: '',
       adherenceDays: [0, 1],
       targets: { work: 45, coverage: 40, weekend: 16 }
     };
@@ -339,6 +382,126 @@
       }
       const date = new Date(text);
       return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function contractRange() {
+      const hasStart = Boolean(state.settings.contractStart);
+      const hasEnd = Boolean(state.settings.contractEnd);
+      if (!hasStart && !hasEnd) return null;
+      const start = parseDate(state.settings.contractStart);
+      const end = parseDate(state.settings.contractEnd);
+      if (!start || !end || start > end) return { invalid: true, start: start, end: end };
+      return { invalid: false, start: start, end: end };
+    }
+
+    function dateInRange(date, range) {
+      return Boolean(range && !range.invalid && date >= range.start && date <= range.end);
+    }
+
+    function contractAggregate() {
+      const range = contractRange();
+      const groups = new Map();
+      let work = 0;
+      let coverage = 0;
+      let adherence = 0;
+      if (range && range.invalid) return { range: range, groups: [], work: 0, coverage: 0, adherence: 0 };
+
+      state.rows.forEach(function(row) {
+        const date = shiftDateFor(row);
+        if (!date || (range && !dateInRange(date, range))) return;
+        const value = row.workedHours;
+        work += value;
+        const key = isoDate(date);
+        if (!groups.has(key)) groups.set(key, { date: date, total: 0, coverage: 0, adherence: 0 });
+        const group = groups.get(key);
+        group.total += value;
+        if (withinDutyWindow(row)) {
+          if (categoryFor(date) === 'adherence') {
+            adherence += value;
+            group.adherence += value;
+          } else {
+            coverage += value;
+            group.coverage += value;
+          }
+        }
+      });
+
+      return { range: range, groups: Array.from(groups.values()).sort(function(a, b) { return a.date - b.date; }), work: work, coverage: coverage, adherence: adherence };
+    }
+
+    function contractWeeks(range) {
+      if (!range || range.invalid) return [];
+      const weeks = [];
+      let start = new Date(range.start);
+      let index = 1;
+      while (start <= range.end) {
+        const end = new Date(start);
+        end.setDate(end.getDate() + 6);
+        if (end > range.end) end.setTime(range.end.getTime());
+
+        const week = { index: index, start: new Date(start), end: new Date(end), work: 0, coverage: 0, adherence: 0 };
+        state.rows.forEach(function(row) {
+          const date = shiftDateFor(row);
+          if (!date || date < week.start || date > week.end) return;
+          const value = row.workedHours;
+          week.work += value;
+          if (withinDutyWindow(row)) {
+            if (categoryFor(date) === 'adherence') week.adherence += value;
+            else week.coverage += value;
+          }
+        });
+        weeks.push(week);
+        start = new Date(end);
+        start.setDate(start.getDate() + 1);
+        index += 1;
+      }
+      return weeks;
+    }
+
+    function renderContractCalendar(range) {
+      const root = document.getElementById('contractCalendar');
+      if (!range) {
+        root.innerHTML = '<div class="empty">Set an agreement start and end date to show the calendar.</div>';
+        return;
+      }
+      if (range.invalid) {
+        root.innerHTML = '<div class="empty">The agreement dates are invalid. Check the start and end dates in Schedule settings.</div>';
+        return;
+      }
+
+      const hoursByDate = new Map();
+      contractAggregate(range).groups.forEach(function(group) {
+        hoursByDate.set(isoDate(group.date), group.total);
+      });
+
+      const monthBlocks = [];
+      let cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1, 12, 0, 0);
+      const lastMonth = new Date(range.end.getFullYear(), range.end.getMonth(), 1, 12, 0, 0);
+      const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+      while (cursor <= lastMonth) {
+        const year = cursor.getFullYear();
+        const month = cursor.getMonth();
+        const first = new Date(year, month, 1, 12, 0, 0);
+        const daysInMonth = new Date(year, month + 1, 0, 12, 0, 0).getDate();
+        const cells = weekdays.map(function(day) { return '<div class="calendar-weekday">' + day + '</div>'; });
+        for (let blank = 0; blank < first.getDay(); blank += 1) cells.push('<div class="calendar-day outside"></div>');
+
+        for (let day = 1; day <= daysInMonth; day += 1) {
+          const date = new Date(year, month, day, 12, 0, 0);
+          const inTerm = dateInRange(date, range);
+          const category = inTerm ? categoryFor(date) : 'outside';
+          const key = isoDate(date);
+          const actual = inTerm && hoursByDate.has(key) ? '<span class="calendar-hours">' + hours(hoursByDate.get(key)) + 'h worked</span>' : '';
+          const label = category === 'adherence' ? 'Adherence' : category === 'coverage' ? 'Coverage' : 'Outside term';
+          cells.push('<div class="calendar-day ' + category + '"><span class="calendar-number">' + day + '</span><span class="calendar-label">' + label + '</span>' + actual + '</div>');
+        }
+
+        monthBlocks.push('<div class="calendar-month"><h3>' + first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + '</h3><div class="calendar-grid">' + cells.join('') + '</div></div>');
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+
+      root.innerHTML = '<div class="calendar-legend"><span class="legend-adherence">Adherence day</span><span class="legend-coverage">Coverage day</span><span class="legend-outside">Outside agreement</span></div>' + monthBlocks.join('');
     }
 
     function isoDate(date) {
@@ -454,12 +617,15 @@
     }
 
     function activeWeek() {
-      const dates = state.rows.map(function(row) { return shiftDateFor(row); }).filter(Boolean).sort(function(a, b) { return a - b; });
+      const range = contractRange();
+      const dates = state.rows.map(function(row) { return shiftDateFor(row); })
+        .filter(function(date) { return date && (!range || (!range.invalid && dateInRange(date, range))); })
+        .sort(function(a, b) { return a - b; });
       const latest = dates[dates.length - 1] || new Date();
       return weekStart(latest);
     }
 
-    function isInWeek(date, start) {
+    function isInWeek    function isInWeek(date, start) {
       const end = new Date(start);
       end.setDate(end.getDate() + 7);
       return date >= start && date < end;
@@ -471,6 +637,7 @@
 
     function aggregate() {
       const start = activeWeek();
+      const range = contractRange();
       const groups = new Map();
       let work = 0;
       let coverage = 0;
@@ -478,7 +645,7 @@
 
       state.rows.forEach(function(row) {
         const date = shiftDateFor(row);
-        if (!date || !isInWeek(date, start)) return;
+        if (!date || (range && (range.invalid || !dateInRange(date, range))) || !isInWeek(date, start)) return;
         const value = row.workedHours;
         work += value;
         const key = isoDate(date);
@@ -496,16 +663,10 @@
         }
       });
 
-      return {
-        start: start,
-        groups: Array.from(groups.values()).sort(function(a, b) { return a.date - b.date; }),
-        work: work,
-        coverage: coverage,
-        weekend: weekend
-      };
+      return { start: start, groups: Array.from(groups.values()).sort(function(a, b) { return a.date - b.date; }), work: work, coverage: coverage, weekend: weekend };
     }
 
-    function percent(value, target) {
+    function percent    function percent(value, target) {
       if (!target) return 0;
       return Math.min(100, Math.max(0, value / target * 100));
     }
@@ -526,11 +687,16 @@
       if (!loggedIn) return;
 
       const summary = aggregate();
+      const range = contractRange();
+      const contractSummary = contractAggregate();
       const end = new Date(summary.start);
       end.setDate(end.getDate() + 6);
       document.getElementById('profileEmail').textContent = state.email;
       document.getElementById('weekRange').textContent = formatDate(summary.start) + ' – ' + formatDate(end);
       document.getElementById('weekTitle').textContent = 'Week of ' + formatDate(summary.start);
+      const termIsValid = Boolean(range && !range.invalid);
+      document.getElementById('contractTitle').textContent = termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Agreement term not set';
+      document.getElementById('contractSubtitle').textContent = termIsValid ? 'Inclusive agreement period. Weekly rows below use seven-day agreement weeks.' : 'Enter the agreement dates in Schedule settings to calculate the contract calendar.';
       const hasRows = state.rows.length > 0;
       const tableFound = Boolean(state.helperStatus && state.helperStatus.tableFound);
       const parsedRows = state.helperStatus ? Number(state.helperStatus.parsedRows || 0) : 0;
@@ -584,22 +750,42 @@
         return '<div class="bar-row"><div class="bar-label"><span>' + item[0] + '</span><span>' + hours(item[1]) + ' / ' + hours(item[2]) + ' hours</span></div><div class="progress"><span style="width:' + percent(item[1], item[2]) + '%;background:' + (item[3] === 'orange' ? 'var(--orange)' : item[3] === 'green' ? 'var(--green)' : 'var(--cyan)') + '"></span></div></div>';
       }).join('');
 
+      if (termIsValid) {
+        document.getElementById('contractSummary').innerHTML = [
+          ['Total work hours', contractSummary.work],
+          ['Total in coverage', contractSummary.coverage],
+          ['Total adherence', contractSummary.adherence]
+        ].map(function(item) {
+          return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong></div>';
+        }).join('');
+      } else {
+        document.getElementById('contractSummary').innerHTML = '<div class="empty">Set an agreement term to calculate contract totals.</div>';
+      }
+
+      const agreementWeeks = contractWeeks(range);
+      document.getElementById('contractWeekRows').innerHTML = agreementWeeks.length ? agreementWeeks.map(function(week) {
+        return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + hours(week.work) + 'h</td><td>' + hours(week.coverage) + 'h</td><td>' + hours(week.adherence) + 'h</td></tr>';
+      }).join('') : '<tr><td colspan="5"><div class="empty">Set an agreement term to show weekly contract totals.</div></td></tr>';
+
+      renderContractCalendar(range);
+
       document.getElementById('setupList').innerHTML =
+        '<div class="setup-item"><span>Agreement term</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
         '<div class="setup-item"><span>Duty window</span><strong>' + state.settings.start + ' – ' + state.settings.end + '</strong></div>' +
         '<div class="setup-item"><span>Adherence days</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Rows from StaffMe</span><strong>' + state.rows.length + '</strong></div>';
 
-      document.getElementById('dayRows').innerHTML = summary.groups.length ? summary.groups.map(function(group) {
+      document.getElementById('dayRows').innerHTML = contractSummary.groups.length ? contractSummary.groups.map(function(group) {
         const category = categoryFor(group.date);
-        return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + (category === 'adherence' ? 'tag-adherence' : 'tag-coverage') + '">' + (category === 'adherence' ? 'Adherence' : 'Coverage') + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(group.weekend) + 'h</td></tr>';
+        return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + (category === 'adherence' ? 'tag-adherence' : 'tag-coverage') + '">' + (category === 'adherence' ? 'Adherence' : 'Coverage') + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(group.adherence) + 'h</td></tr>';
       }).join('') : '<tr><td colspan="5"><div class="empty">No rows found for the selected week.</div></td></tr>';
 
       const preview = state.rows.slice().sort(function(a, b) {
         const da = parseDate(a.date) || new Date(0);
         const db = parseDate(b.date) || new Date(0);
         return db - da || String(b.time).localeCompare(String(a.time));
-      }).slice(0, 12);
+      });
       document.getElementById('rowCount').textContent = state.rows.length + ' rows';
       document.getElementById('hourRows').innerHTML = preview.length ? preview.map(function(row) {
         return '<tr><td>' + formatDate(row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + '</td><td>' + row.evaluations + '</td><td>' + row.chat + '</td><td>' + row.idcheck + '</td><td>' + row.stream + '</td></tr>';
@@ -622,6 +808,8 @@
         '<div class="modal-backdrop" id="modalBackdrop"><div class="modal">' +
           '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Schedule settings</h2></div><button class="close" id="closeModal">×</button></div>' +
           '<form id="settingsForm">' +
+            '<div class="field-grid"><div class="field"><label for="contractStart">Agreement starts</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Agreement ends</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
+            '<div class="field-help">The dates are inclusive. An overnight shift is assigned to the date it starts.</div>' +
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence days</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
@@ -637,7 +825,13 @@
       document.getElementById('settingsForm').addEventListener('submit', function(event) {
         event.preventDefault();
         const selected = Array.from(document.querySelectorAll('input[name="adherenceDay"]:checked')).map(function(input) { return Number(input.value); });
+        const contractStart = document.getElementById('contractStart').value;
+        const contractEnd = document.getElementById('contractEnd').value;
+        if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both agreement dates.'); return; }
+        if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Agreement end date must be on or after the start date.'); return; }
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
+        state.settings.contractStart = contractStart;
+        state.settings.contractEnd = contractEnd;
         state.settings.start = document.getElementById('startTime').value;
         state.settings.end = document.getElementById('endTime').value;
         state.settings.adherenceDays = selected;
