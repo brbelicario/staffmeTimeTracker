@@ -212,6 +212,12 @@
     .contract-total strong { display: block; margin-top: 8px; font-size: 1.35rem; }
     .contract-total small { display: block; margin-top: 5px; color: var(--muted); font-size: .72rem; line-height: 1.35; }
     .contract-week-table { margin-top: 18px; }
+    .contract-history { margin-top: 18px; padding: 15px; border: 1px solid #edf0f4; border-radius: 15px; background: #fbfcfe; }
+    .contract-history-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+    .contract-history-head h3 { margin: 0; }
+    .contract-history-head p { margin: 0; color: var(--muted); font-size: .74rem; }
+    .manual-breakdown-note { margin: 15px 0 0; }
+    .manual-breakdown-note strong { color: var(--ink); }
     .calendar-month { margin-top: 18px; }
     .calendar-month h3 { margin: 0 0 10px; font-size: 1rem; }
     .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
@@ -245,6 +251,7 @@
     .day-choice span { display: block; text-align: center; padding: 10px 4px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-weight: 800; font-size: .78rem; cursor: pointer; }
     .day-choice input:checked + span { color: #fff; border-color: var(--navy); background: var(--navy); }
     .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+    .modal-spacer { flex: 1; }
     .toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; padding: 13px 16px; color: white; background: var(--navy); border-radius: 12px; box-shadow: var(--shadow); font-size: .84rem; }
 
     .row-badges { display: flex; flex-wrap: wrap; gap: 5px; min-width: 170px; }
@@ -395,10 +402,10 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Manual additions</div><h2>Other Task and missing hours</h2><p>Add hours that StaffMe cannot provide, such as Other Task or a late-login adjustment.</p></div>
+          <div><div class="week-label">Manual additions</div><h2>Other Task and missing hours</h2><p>Add one total entry and split it between InCoverage, Weekend adherence, and outside-duty hours.</p></div>
           <button class="btn btn-primary" id="manualAddBtn">Add manual hours</button>
         </div>
-        <div class="table-scroll"><table class="day-table manual-table"><thead><tr><th>Date</th><th>Hours</th><th>Classification</th><th>Note</th><th></th></tr></thead><tbody id="manualRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table manual-table"><thead><tr><th>Date</th><th>Work</th><th>Breakdown</th><th>Classification</th><th>Note</th><th></th></tr></thead><tbody id="manualRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
@@ -409,6 +416,7 @@
         <div class="week-label average-label">Monthly average view</div>
         <p class="muted average-help">Completed agreement weeks use saved email values when available. Current and future weeks use live StaffMe plus manual totals; averages are calculated per agreement week against the weekly targets.</p>
         <div class="contract-total-grid" id="contractAverage"></div>
+        <div id="contractHistory"></div>
         <div class="table-scroll">
           <table class="day-table contract-week-table">
             <thead><tr><th>Agreement week</th><th>Date range</th><th>Work hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead>
@@ -453,7 +461,7 @@
           <div><div class="week-label">StaffMe source rows</div><h2>Hourly data preview</h2><p>Only hourly rows captured from StaffMe appear here.</p></div>
           <span class="tag tag-neutral" id="rowCount"></span>
         </div>
-        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Avg Seconds per Task</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
+        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
       </section>
     </section>
   </main>
@@ -478,6 +486,7 @@
       rows: [],
       manualEntries: [],
       reportedWeeks: [],
+      contracts: [],
       source: 'waiting',
       lastSync: null,
       helperStatus: null,
@@ -498,6 +507,7 @@
         rows: state.rows,
         manualEntries: state.manualEntries,
         reportedWeeks: state.reportedWeeks,
+        contracts: state.contracts,
         source: state.source,
         lastSync: state.lastSync
       }));
@@ -526,6 +536,7 @@
           state.rows = dedupeRows(state.rows.concat(normalizeRows(remote.rows || [])));
           state.manualEntries = mergeManualEntries(state.manualEntries, normalizeManualEntries(remote.manualEntries || []));
           state.reportedWeeks = mergeReportedWeeks(state.reportedWeeks, normalizeReportedWeeks(remote.reportedWeeks || []));
+          state.contracts = mergeContracts(state.contracts, normalizeContracts(remote.contracts || []));
           if (remote.settings) state.settings = mergeSettings(remote.settings);
           if (remote.lastSync && (!state.lastSync || new Date(remote.lastSync) > new Date(state.lastSync))) {
             state.lastSync = remote.lastSync;
@@ -554,6 +565,7 @@
             rows: state.rows,
             manualEntries: state.manualEntries,
             reportedWeeks: state.reportedWeeks,
+            contracts: state.contracts,
             lastSync: state.lastSync
           })
         });
@@ -586,6 +598,7 @@
         state.rows = isDemoProfile ? [] : savedRows;
         state.manualEntries = normalizeManualEntries(saved.manualEntries || []);
         state.reportedWeeks = normalizeReportedWeeks(saved.reportedWeeks || []);
+        state.contracts = normalizeContracts(saved.contracts || []);
         state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
         state.lastSync = saved.lastSync || null;
         state.helperStatus = null;
@@ -876,13 +889,23 @@
     function normalizeManualEntries(entries) {
       return (Array.isArray(entries) ? entries : []).map(function(entry, index) {
         const date = String(entry && entry.date || '').slice(0, 10);
-        const category = ['adherence', 'coverage', 'outside'].indexOf(String(entry && entry.category || '')) >= 0
+        const legacyCategory = ['adherence', 'coverage', 'outside'].indexOf(String(entry && entry.category || '')) >= 0
           ? String(entry.category)
           : 'outside';
+        const total = Math.max(0, numberValue(entry && entry.hours));
+        const hasCoverage = Object.prototype.hasOwnProperty.call(entry || {}, 'coverageHours');
+        const hasAdherence = Object.prototype.hasOwnProperty.call(entry || {}, 'adherenceHours');
+        const legacyCoverage = legacyCategory === 'outside' ? 0 : total;
+        const legacyAdherence = legacyCategory === 'adherence' ? total : 0;
+        const coverageHours = Math.min(total, Math.max(0, hasCoverage ? numberValue(entry.coverageHours) : legacyCoverage));
+        const adherenceHours = Math.min(coverageHours, Math.max(0, hasAdherence ? numberValue(entry.adherenceHours) : legacyAdherence));
+        const category = adherenceHours > 0 ? 'adherence' : coverageHours > 0 ? 'coverage' : 'outside';
         return {
           id: String(entry && entry.id || ('manual-' + index + '-' + date)),
           date: date,
-          hours: numberValue(entry && entry.hours),
+          hours: total,
+          coverageHours: coverageHours,
+          adherenceHours: adherenceHours,
           category: category,
           note: String(entry && entry.note || '').trim().slice(0, 240)
         };
@@ -906,6 +929,93 @@
       }).filter(function(entry) {
         return Boolean(parseDate(entry.start));
       });
+    }
+
+    function normalizeContracts(contracts) {
+      return (Array.isArray(contracts) ? contracts : []).map(function(contract, index) {
+        const start = String(contract && contract.start || '').slice(0, 10);
+        const end = String(contract && contract.end || '').slice(0, 10);
+        const startDate = parseDate(start);
+        const endDate = parseDate(end);
+        if (!startDate || !endDate || startDate > endDate) return null;
+        const totals = contract && contract.totals && typeof contract.totals === 'object' ? contract.totals : {};
+        return {
+          id: String(contract && contract.id || ('contract-' + index + '-' + start)),
+          start: start,
+          end: end,
+          settings: mergeSettings(contract && contract.settings),
+          rows: normalizeRows(contract && contract.rows || []),
+          manualEntries: normalizeManualEntries(contract && contract.manualEntries || []),
+          reportedWeeks: normalizeReportedWeeks(contract && contract.reportedWeeks || []),
+          totals: {
+            work: Math.max(0, numberValue(totals.work)),
+            coverage: Math.max(0, numberValue(totals.coverage)),
+            adherence: Math.max(0, numberValue(totals.adherence))
+          },
+          archivedAt: String(contract && contract.archivedAt || '')
+        };
+      }).filter(Boolean).sort(function(a, b) {
+        return b.start.localeCompare(a.start);
+      });
+    }
+
+    function mergeContracts(localContracts, remoteContracts) {
+      const map = new Map();
+      normalizeContracts(localContracts).forEach(function(contract) { map.set(contract.id, contract); });
+      normalizeContracts(remoteContracts).forEach(function(remote) {
+        const local = map.get(remote.id);
+        if (!local) {
+          map.set(remote.id, remote);
+          return;
+        }
+        map.set(remote.id, {
+          id: remote.id,
+          start: remote.start,
+          end: remote.end,
+          settings: remote.settings,
+          rows: dedupeRows(local.rows.concat(remote.rows)),
+          manualEntries: mergeManualEntries(local.manualEntries, remote.manualEntries),
+          reportedWeeks: mergeReportedWeeks(local.reportedWeeks, remote.reportedWeeks),
+          totals: remote.totals.work || remote.totals.coverage || remote.totals.adherence ? remote.totals : local.totals,
+          archivedAt: remote.archivedAt || local.archivedAt
+        });
+      });
+      return Array.from(map.values()).sort(function(a, b) { return b.start.localeCompare(a.start); });
+    }
+
+    function archiveCurrentContract() {
+      const range = contractRange();
+      if (!range || range.invalid) return null;
+      const official = summarizeOfficialWeeks(officialAgreementWeeks(range));
+      return {
+        id: makeId('contract'),
+        start: isoDate(range.start),
+        end: isoDate(range.end),
+        settings: mergeSettings(state.settings),
+        rows: normalizeRows(state.rows),
+        manualEntries: normalizeManualEntries(state.manualEntries),
+        reportedWeeks: normalizeReportedWeeks(state.reportedWeeks),
+        totals: official,
+        archivedAt: new Date().toISOString()
+      };
+    }
+
+    function renderContractHistory() {
+      const root = document.getElementById('contractHistory');
+      const contracts = normalizeContracts(state.contracts);
+      if (!contracts.length) {
+        root.innerHTML = '';
+        return;
+      }
+      root.innerHTML =
+        '<div class="contract-history">' +
+          '<div class="contract-history-head"><h3>Previous contracts</h3><p>Archived data remains saved separately from the current contract.</p></div>' +
+          '<div class="table-scroll"><table class="day-table"><thead><tr><th>Contract period</th><th>Work hours</th><th>InCoverage</th><th>Weekend adherence</th><th>Saved data</th></tr></thead><tbody>' +
+            contracts.map(function(contract) {
+              return '<tr><td>' + formatDate(contract.start) + ' – ' + formatDate(contract.end) + '</td><td>' + hours(contract.totals.work) + 'h</td><td>' + hours(contract.totals.coverage) + 'h</td><td>' + hours(contract.totals.adherence) + 'h</td><td>' + (contract.rows.length + contract.manualEntries.length + contract.reportedWeeks.length) + ' records</td></tr>';
+            }).join('') +
+          '</tbody></table></div>' +
+        '</div>';
     }
 
     function mergeManualEntries(localEntries, remoteEntries) {
@@ -1039,8 +1149,8 @@
           key: 'manual:' + entry.id,
           date: date,
           value: Number(entry.hours || 0),
-          coverage: entry.category !== 'outside',
-          adherence: entry.category === 'adherence',
+          coverage: Number(entry.coverageHours || 0),
+          adherence: Number(entry.adherenceHours || 0),
           entry: entry
         });
       });
@@ -1098,10 +1208,22 @@
       return date.getTime();
     }
 
-    function manualCategoryLabel(category) {
-      if (category === 'adherence') return 'Weekend adherence';
-      if (category === 'coverage') return 'InCoverage';
-      return 'Outside duty / Other Task';
+    function manualEntryBadges(entry) {
+      const badges = [];
+      const outside = Math.max(0, Number(entry.hours || 0) - Number(entry.coverageHours || 0));
+      if (Number(entry.adherenceHours || 0) > 0) badges.push('<span class="tag tag-adherence">Weekend adherence</span>');
+      if (Number(entry.coverageHours || 0) > 0) badges.push('<span class="tag tag-coverage">InCoverage</span>');
+      if (outside > 0) badges.push('<span class="tag tag-neutral">Outside duty / Other Task</span>');
+      return badges.join('');
+    }
+
+    function manualBreakdown(entry) {
+      const parts = [];
+      if (Number(entry.coverageHours || 0) > 0) parts.push(hours(entry.coverageHours) + 'h coverage');
+      if (Number(entry.adherenceHours || 0) > 0) parts.push(hours(entry.adherenceHours) + 'h adherence');
+      const outside = Math.max(0, Number(entry.hours || 0) - Number(entry.coverageHours || 0));
+      if (outside > 0) parts.push(hours(outside) + 'h outside');
+      return parts.length ? parts.join(' · ') : 'Outside duty / Other Task';
     }
 
     function renderManualEntries() {
@@ -1111,9 +1233,8 @@
       });
       document.getElementById('manualAddBtn').textContent = 'Add manual hours';
       root.innerHTML = entries.length ? entries.map(function(entry) {
-        const tagClass = entry.category === 'adherence' ? 'tag-adherence' : entry.category === 'coverage' ? 'tag-coverage' : 'tag-neutral';
-        return '<tr><td>' + formatDate(entry.date) + '</td><td>' + hours(entry.hours) + 'h</td><td><span class="tag ' + tagClass + '">' + manualCategoryLabel(entry.category) + '</span></td><td>' + (entry.note ? escapeHtml(entry.note) : '<span class="muted">—</span>') + '</td><td><button class="btn btn-quiet" type="button" data-manual-delete="' + escapeHtml(entry.id) + '">Remove</button></td></tr>';
-      }).join('') : '<tr><td colspan="5"><div class="empty">No manual hours added yet.</div></td></tr>';
+        return '<tr><td>' + formatDate(entry.date) + '</td><td>' + hours(entry.hours) + 'h</td><td>' + escapeHtml(manualBreakdown(entry)) + '</td><td><div class="row-badges">' + manualEntryBadges(entry) + '</div></td><td>' + (entry.note ? escapeHtml(entry.note) : '<span class="muted">—</span>') + '</td><td><button class="btn btn-quiet" type="button" data-manual-delete="' + escapeHtml(entry.id) + '">Remove</button></td></tr>';
+      }).join('') : '<tr><td colspan="6"><div class="empty">No manual hours added yet.</div></td></tr>';
       root.querySelectorAll('[data-manual-delete]').forEach(function(button) {
         button.addEventListener('click', function() {
           const id = button.getAttribute('data-manual-delete');
@@ -1231,31 +1352,52 @@
     function openManualEntry() {
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="manualModalBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">Manual tracking</div><h2>Add manual hours</h2><p class="muted">Every manual entry counts toward Work Hours. Choose whether it also counts as InCoverage or Weekend adherence.</p></div><button class="close" id="closeManualModal" type="button">×</button></div>' +
+          '<div class="modal-head"><div><div class="eyebrow">Manual tracking</div><h2>Add manual hours</h2><p class="muted">Enter the total work first, then split the same entry between InCoverage and outside-duty hours.</p></div><button class="close" id="closeManualModal" type="button">×</button></div>' +
           '<form id="manualForm">' +
-            '<div class="field-grid"><div class="field"><label for="manualDate">Date</label><input id="manualDate" type="date" value="' + isoDate(new Date()) + '" required></div><div class="field"><label for="manualHours">Hours</label><input id="manualHours" type="number" min=".01" step=".01" placeholder="e.g. 1.50" required></div></div>' +
-            '<div class="field"><label for="manualCategory">Classification</label><select id="manualCategory"><option value="adherence">Weekend adherence (Work + InCoverage + Weekend)</option><option value="coverage">InCoverage (Work + InCoverage)</option><option value="outside">Outside duty / Other Task (Work only)</option></select></div>' +
+            '<div class="field-grid"><div class="field"><label for="manualDate">Date</label><input id="manualDate" type="date" value="' + isoDate(new Date()) + '" required></div><div class="field"><label for="manualHours">Total work hours</label><input id="manualHours" type="number" min=".01" step=".01" placeholder="e.g. 2.67" required></div></div>' +
+            '<div class="field-grid"><div class="field"><label for="manualCoverage">InCoverage hours</label><input id="manualCoverage" type="number" min="0" step=".01" placeholder="e.g. 1.00" value="0"></div><div class="field"><label for="manualAdherence">Weekend adherence hours</label><input id="manualAdherence" type="number" min="0" step=".01" placeholder="e.g. 1.00" value="0"></div></div>' +
+            '<div class="note manual-breakdown-note"><span>●</span><div><strong>Outside duty / Other Task: <span id="manualOutside">0.00h</span></strong><br><span class="muted">This is calculated as Total work − InCoverage. Weekend adherence is a subset of InCoverage.</span></div></div>' +
             '<div class="field"><label for="manualNote">Note (optional)</label><input id="manualNote" type="text" maxlength="240" placeholder="e.g. Other Task or late-login adjustment"></div>' +
-            '<div class="field-help">Use the actual calendar date. For a split overnight shift, add separate entries to the dates shown by StaffMe.</div>' +
+            '<div class="field-help">Example: enter 2.67 total hours and 1.00 InCoverage hour. The tracker records the remaining 1.67 hours as outside duty.</div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelManual">Cancel</button><button type="submit" class="btn btn-primary">Add hours</button></div>' +
           '</form>' +
         '</div></div>';
+      const refreshBreakdown = function() {
+        const total = Math.max(0, optionalNumber(document.getElementById('manualHours').value) || 0);
+        const coverage = Math.max(0, optionalNumber(document.getElementById('manualCoverage').value) || 0);
+        const outside = Math.max(0, total - Math.min(total, coverage));
+        document.getElementById('manualOutside').textContent = hours(outside) + 'h';
+      };
+      document.getElementById('manualHours').addEventListener('input', refreshBreakdown);
+      document.getElementById('manualCoverage').addEventListener('input', refreshBreakdown);
       document.getElementById('closeManualModal').addEventListener('click', closeModal);
       document.getElementById('cancelManual').addEventListener('click', closeModal);
       document.getElementById('manualModalBackdrop').addEventListener('click', function(event) { if (event.target.id === 'manualModalBackdrop') closeModal(); });
       document.getElementById('manualForm').addEventListener('submit', function(event) {
         event.preventDefault();
         const date = document.getElementById('manualDate').value;
-        const value = optionalNumber(document.getElementById('manualHours').value);
-        const category = document.getElementById('manualCategory').value;
-        if (!parseDate(date) || value === null || value <= 0) {
-          showToast('Enter a valid date and a positive number of hours.');
+        const total = optionalNumber(document.getElementById('manualHours').value);
+        const coverage = optionalNumber(document.getElementById('manualCoverage').value) || 0;
+        const adherence = optionalNumber(document.getElementById('manualAdherence').value) || 0;
+        if (!parseDate(date) || total === null || total <= 0) {
+          showToast('Enter a valid date and a positive total number of hours.');
           return;
         }
+        if (coverage < 0 || coverage > total) {
+          showToast('InCoverage hours must be between 0 and the total work hours.');
+          return;
+        }
+        if (adherence < 0 || adherence > coverage) {
+          showToast('Weekend adherence hours cannot be greater than InCoverage hours.');
+          return;
+        }
+        const category = adherence > 0 ? 'adherence' : coverage > 0 ? 'coverage' : 'outside';
         state.manualEntries = normalizeManualEntries(state.manualEntries.concat([{
           id: makeId('manual'),
           date: date,
-          hours: value,
+          hours: total,
+          coverageHours: coverage,
+          adherenceHours: adherence,
           category: category,
           note: document.getElementById('manualNote').value
         }]));
@@ -1381,6 +1523,7 @@
         document.getElementById('contractAverage').innerHTML = '<div class="empty">Set an agreement term to calculate monthly averages.</div>';
       }
 
+      renderContractHistory();
 
       document.getElementById('contractWeekRows').innerHTML = officialWeeks.length ? officialWeeks.map(function(week) {
         return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + officialValueCell(week, 'displayWork', 'workReported') + '</td><td>' + officialValueCell(week, 'displayCoverage', 'coverageReported') + '</td><td>' + officialValueCell(week, 'displayAdherence', 'adherenceReported') + '</td></tr>';
@@ -1419,10 +1562,8 @@
           ? '<span class="tag tag-neutral">Outside duty</span>'
           : (adherence ? '<span class="tag tag-adherence">Weekend adherence</span>' : '') +
             '<span class="tag tag-coverage">InCoverage</span>';
-        const aht = ahtSecondsFor(row);
-        const ahtLabel = aht === null ? '—' : Math.round(aht) + 's';
-        return '<tr><td>' + formatDate(row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td>' + ahtLabel + '</td><td><div class="row-badges">' + badges + '</div></td></tr>';
-      }).join('') : '<tr><td colspan="5"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
+        return '<tr><td>' + formatDate(row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td><div class="row-badges">' + badges + '</div></td></tr>';
+      }).join('') : '<tr><td colspan="4"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
     }
 
     function showToast(message) {
@@ -1532,6 +1673,76 @@
       });
     }
 
+    function openNewContract() {
+      const current = contractRange();
+      if (!current || current.invalid) {
+        showToast('Set a valid current agreement term before starting a new contract.');
+        return;
+      }
+      const suggestedStartDate = new Date(current.end);
+      suggestedStartDate.setDate(suggestedStartDate.getDate() + 1);
+      const suggestedEndDate = new Date(suggestedStartDate);
+      suggestedEndDate.setDate(suggestedEndDate.getDate() + 29);
+      document.getElementById('modalRoot').innerHTML =
+        '<div class="modal-backdrop" id="newContractBackdrop"><div class="modal">' +
+          '<div class="modal-head"><div><div class="eyebrow">Contract history</div><h2>Start a new contract</h2><p class="muted">The current contract will be archived with its StaffMe rows, manual hours, and reported weekly metrics.</p></div><button class="close" id="closeNewContract" type="button">×</button></div>' +
+          '<div class="note"><span>●</span><div><strong>Current contract:</strong> ' + formatDate(current.start) + ' – ' + formatDate(current.end) + '<br><span class="muted">Your duty schedule and targets will carry over to the new contract.</span></div></div>' +
+          '<form id="newContractForm">' +
+            '<div class="field-grid"><div class="field"><label for="newContractStart">New agreement starts</label><input id="newContractStart" type="date" value="' + isoDate(suggestedStartDate) + '" required></div><div class="field"><label for="newContractEnd">New agreement ends</label><input id="newContractEnd" type="date" value="' + isoDate(suggestedEndDate) + '" required></div></div>' +
+            '<div class="field-help">Use the dates written in your new contract. Weeks will start from the new agreement start date.</div>' +
+            '<div id="newContractError" class="auth-error" hidden></div>' +
+            '<div class="modal-actions"><button type="button" class="btn" id="cancelNewContract">Cancel</button><button type="submit" class="btn btn-primary">Archive and start new contract</button></div>' +
+          '</form>' +
+        '</div></div>';
+      document.getElementById('closeNewContract').addEventListener('click', closeModal);
+      document.getElementById('cancelNewContract').addEventListener('click', closeModal);
+      document.getElementById('newContractBackdrop').addEventListener('click', function(event) { if (event.target.id === 'newContractBackdrop') closeModal(); });
+      document.getElementById('newContractForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const errorRoot = document.getElementById('newContractError');
+        const startValue = document.getElementById('newContractStart').value;
+        const endValue = document.getElementById('newContractEnd').value;
+        const start = parseDate(startValue);
+        const end = parseDate(endValue);
+        if (!start || !end || start > end) {
+          errorRoot.textContent = 'Enter a valid new agreement date range.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (start <= current.end) {
+          errorRoot.textContent = 'The new contract must start after the current contract ends.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (!state.remoteReady) {
+          errorRoot.textContent = 'Wait until the cloud copy is available before starting a new contract, so the current data can be archived safely.';
+          errorRoot.hidden = false;
+          return;
+        }
+        const archived = archiveCurrentContract();
+        if (!archived) {
+          errorRoot.textContent = 'The current contract could not be archived.';
+          errorRoot.hidden = false;
+          return;
+        }
+        state.contracts = normalizeContracts(state.contracts.concat([archived]));
+        state.settings = mergeSettings(state.settings);
+        state.settings.contractStart = isoDate(start);
+        state.settings.contractEnd = isoDate(end);
+        state.rows = [];
+        state.manualEntries = [];
+        state.reportedWeeks = [];
+        state.source = 'waiting';
+        state.lastSync = null;
+        state.helperStatus = null;
+        saveProfile();
+        queueRemoteSave();
+        closeModal();
+        render();
+        showToast('New contract started. Previous contract data was archived.');
+      });
+    }
+
     function openSettings() {
       const days = [0,1,2,3,4,5,6];
       document.getElementById('modalRoot').innerHTML =
@@ -1539,7 +1750,7 @@
           '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Schedule settings</h2></div><button class="close" id="closeModal">×</button></div>' +
           '<form id="settingsForm">' +
             '<div class="field-grid"><div class="field"><label for="contractStart">Agreement starts</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Agreement ends</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
-            '<div class="field-help">The dates are inclusive. Overnight rows are classified using the calendar date shown by StaffMe.</div>' +
+            '<div class="field-help">The dates are inclusive. To start a different contract without losing this one, use New contract below.</div>' +
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence days</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
@@ -1548,12 +1759,13 @@
             '<div class="field"><label for="weekendTarget">Weekend adherence target</label><input id="weekendTarget" type="number" min="0" step=".01" value="' + state.settings.targets.weekend + '"></div>' +
             '<div class="field-grid"><div class="field"><label for="dailyCap">Daily work cap reminder</label><input id="dailyCap" type="number" min="0" step=".01" value="' + state.settings.caps.daily + '"></div><div class="field"><label for="weeklyCap">Contract weekly work cap</label><input id="weeklyCap" type="number" min="0" step=".01" value="' + state.settings.caps.weekly + '"></div></div>' +
             '<div class="field-help">The default limits come from the StaffMe guideline: 12 hours per day and 75 hours per contract coverage week.</div>' +
-            '<div class="modal-actions"><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
+            '<div class="modal-actions"><button type="button" class="btn btn-quiet" id="newContractBtn">New contract</button><span class="modal-spacer"></span><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
           '</form>' +
         '</div></div>';
       document.getElementById('closeModal').addEventListener('click', closeModal);
       document.getElementById('cancelSettings').addEventListener('click', closeModal);
       document.getElementById('modalBackdrop').addEventListener('click', function(event) { if (event.target.id === 'modalBackdrop') closeModal(); });
+      document.getElementById('newContractBtn').addEventListener('click', openNewContract);
       document.getElementById('settingsForm').addEventListener('submit', function(event) {
         event.preventDefault();
         const selected = Array.from(document.querySelectorAll('input[name="adherenceDay"]:checked')).map(function(input) { return Number(input.value); });
@@ -1607,6 +1819,7 @@
         state.rows = [];
         state.manualEntries = [];
         state.reportedWeeks = [];
+        state.contracts = [];
         state.source = 'waiting';
         state.lastSync = null;
         state.helperStatus = null;
@@ -1695,6 +1908,7 @@
       state.email = '';
       state.user = null;
       state.helperStatus = null;
+      state.contracts = [];
       state.remoteReady = false;
       state.remoteStatus = 'unknown';
       closeModal();
