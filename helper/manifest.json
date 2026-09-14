@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "StaffMe Time Tracker Helper",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Captures the visible StaffMe hourly table locally for the time tracker.",
   "permissions": [
     "storage"
@@ -27,6 +27,18 @@
       "all_frames": true,
       "match_about_blank": true,
       "match_origin_as_fallback": true
+    },
+    {
+      "matches": [
+        "https://script.google.com/*",
+        "https://script.googleusercontent.com/*"
+      ],
+      "js": [
+        "page-hook.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
     },
     {
       "matches": [
