@@ -625,7 +625,7 @@
       return weekStart(latest);
     }
 
-    function isInWeek    function isInWeek(date, start) {
+    function isInWeek(date, start) {
       const end = new Date(start);
       end.setDate(end.getDate() + 7);
       return date >= start && date < end;
@@ -666,7 +666,7 @@
       return { start: start, groups: Array.from(groups.values()).sort(function(a, b) { return a.date - b.date; }), work: work, coverage: coverage, weekend: weekend };
     }
 
-    function percent    function percent(value, target) {
+    function percent(value, target) {
       if (!target) return 0;
       return Math.min(100, Math.max(0, value / target * 100));
     }
