@@ -546,7 +546,7 @@
         state.remoteReady = true;
         state.remoteStatus = 'synced';
         saveProfile();
-        if (state.rows.length || state.manualEntries.length || state.reportedWeeks.length) queueRemoteSave();
+        if (state.rows.length || state.manualEntries.length || state.reportedWeeks.length || state.contracts.length) queueRemoteSave();
       } catch (error) {
         state.remoteReady = false;
         state.remoteStatus = 'local-only';
