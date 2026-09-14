@@ -378,10 +378,10 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">CB calendar cap</div><h2>Weekly work-hour reminder</h2><p>CB weeks run on the 1–7, 8–14, 15–21, and remaining-days calendar. Tracked hours include StaffMe rows plus manual entries.</p></div>
+          <div><div class="week-label">Contract coverage cap</div><h2>Weekly work-hour reminder</h2><p>Weeks follow the agreement term from its start date in seven-day blocks. Completed weeks use reported email Work Hours when entered; current and future weeks use StaffMe plus manual tracked hours.</p></div>
         </div>
         <div id="capSummary"></div>
-        <div class="table-scroll"><table class="day-table"><thead><tr><th>CB calendar week</th><th>Date range</th><th>Tracked work</th><th>Cap</th><th>Status</th></tr></thead><tbody id="capRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table"><thead><tr><th>Agreement week</th><th>Date range</th><th>Weekly work</th><th>Cap</th><th>Status</th></tr></thead><tbody id="capRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
@@ -624,37 +624,18 @@
       return weeks;
     }
 
-    function cbWeekRangeFor(date) {
-      const startDay = Math.floor((date.getDate() - 1) / 7) * 7 + 1;
-      const start = new Date(date.getFullYear(), date.getMonth(), startDay, 12, 0, 0);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 6);
-      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 12, 0, 0);
-      if (end > monthEnd) end.setTime(monthEnd.getTime());
-      return { start: start, end: end, index: Math.floor((date.getDate() - 1) / 7) + 1, key: isoDate(start) };
-    }
-
-    function cbCalendarRows(range) {
-      const map = new Map();
-      function addBucket(bucket) {
-        if (!map.has(bucket.key)) map.set(bucket.key, { key: bucket.key, start: bucket.start, end: bucket.end, index: bucket.index, work: 0 });
-        return map.get(bucket.key);
-      }
-      trackedItems().forEach(function(item) {
-        if (range && range.invalid) return;
-        if (range && !dateInRange(item.date, range)) return;
-        const row = addBucket(cbWeekRangeFor(item.date));
-        row.work += item.value;
+    function contractCapRows(range) {
+      if (!range || range.invalid) return [];
+      return officialAgreementWeeks(range).map(function(week) {
+        return {
+          key: isoDate(week.start),
+          index: week.index,
+          start: week.start,
+          end: week.end,
+          work: week.displayWork,
+          reported: week.workReported
+        };
       });
-      if (range && !range.invalid) {
-        let cursor = new Date(range.start);
-        while (cursor <= range.end) {
-          addBucket(cbWeekRangeFor(cursor));
-          cursor.setDate(cursor.getDate() + 1);
-        }
-      }
-      if (!map.size) addBucket(cbWeekRangeFor(new Date()));
-      return Array.from(map.values()).sort(function(a, b) { return a.start - b.start; });
     }
 
     function dailyCapWarnings(range) {
@@ -673,24 +654,32 @@
 
     function renderCapMonitor(range) {
       const cap = Number(state.settings.caps.weekly || 75);
-      const rows = cbCalendarRows(range);
-      const currentBucket = cbWeekRangeFor(new Date());
-      const current = rows.find(function(row) { return row.key === currentBucket.key; }) || currentBucket;
-      const dailyWarnings = dailyCapWarnings(range);
-      const currentStatus = current.work > cap ? 'over' : current.work >= cap * .9 ? 'near' : 'ok';
-      const statusLabel = currentStatus === 'over' ? 'Over cap' : currentStatus === 'near' ? 'Near cap' : 'Within cap';
+      const dailyWarnings = range && !range.invalid ? dailyCapWarnings(range) : [];
       const warningText = dailyWarnings.length
         ? '<div class="cap-warning"><strong>Daily cap warning:</strong> ' + dailyWarnings.slice(0, 3).map(function(item) { return formatDate(item.date) + ' has ' + hours(item.work) + 'h'; }).join('; ') + (dailyWarnings.length > 3 ? '; +' + (dailyWarnings.length - 3) + ' more.' : '.') + ' Daily limit: ' + hours(state.settings.caps.daily) + 'h.</div>'
         : '';
+      if (!range || range.invalid) {
+        document.getElementById('capSummary').innerHTML = '<div class="empty">Set a valid agreement term to calculate the contract coverage weeks.</div>';
+        document.getElementById('capRows').innerHTML = '<tr><td colspan="5"><div class="empty">No contract coverage weeks available.</div></td></tr>';
+        return;
+      }
+
+      const rows = contractCapRows(range);
+      const today = new Date();
+      today.setHours(12, 0, 0, 0);
+      const current = rows.find(function(row) { return today >= row.start && today <= row.end; }) || (today < range.start ? rows[0] : rows[rows.length - 1]);
+      const currentStatus = current.work > cap ? 'over' : current.work >= cap * .9 ? 'near' : 'ok';
+      const statusLabel = currentStatus === 'over' ? 'Over cap' : currentStatus === 'near' ? 'Near cap' : 'Within cap';
       document.getElementById('capSummary').innerHTML = warningText +
         '<div class="cap-grid">' +
-          '<div class="cap-card"><strong>Current CB week: ' + hours(current.work) + 'h / ' + hours(cap) + 'h</strong><span>' + formatDate(current.start) + ' – ' + formatDate(current.end) + ' · <span class="cap-status ' + currentStatus + '">' + statusLabel + '</span></span></div>' +
-          '<div class="cap-card"><strong>Daily reminder: ' + hours(state.settings.caps.daily) + 'h</strong><span>Tracked work is checked by actual calendar date. Reported email values are kept separate.</span></div>' +
+          '<div class="cap-card"><strong>Current agreement week: ' + hours(current.work) + 'h / ' + hours(cap) + 'h</strong><span>Week ' + current.index + ': ' + formatDate(current.start) + ' – ' + formatDate(current.end) + ' · <span class="cap-status ' + currentStatus + '">' + statusLabel + '</span></span></div>' +
+          '<div class="cap-card"><strong>Daily reminder: ' + hours(state.settings.caps.daily) + 'h</strong><span>Daily warnings use actual calendar-date rows. The weekly cap uses the contract coverage period.</span></div>' +
         '</div>';
       document.getElementById('capRows').innerHTML = rows.map(function(row) {
         const status = row.work > cap ? 'over' : row.work >= cap * .9 ? 'near' : 'ok';
         const label = status === 'over' ? 'Over cap' : status === 'near' ? 'Near cap' : 'Within cap';
-        return '<tr><td>CB Week ' + row.index + '</td><td>' + formatDate(row.start) + ' – ' + formatDate(row.end) + '</td><td>' + hours(row.work) + 'h</td><td>' + hours(cap) + 'h</td><td><span class="cap-status ' + status + '">' + label + '</span></td></tr>';
+        const source = row.reported ? ' <span class="tag tag-neutral">Reported</span>' : '';
+        return '<tr><td>Week ' + row.index + '</td><td>' + formatDate(row.start) + ' – ' + formatDate(row.end) + '</td><td>' + hours(row.work) + 'h' + source + '</td><td>' + hours(cap) + 'h</td><td><span class="cap-status ' + status + '">' + label + '</span></td></tr>';
       }).join('');
     }
 
@@ -1342,7 +1331,7 @@
         '<div class="setup-item"><span>Adherence days</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Daily cap reminder</span><strong>' + hours(state.settings.caps.daily) + 'h</strong></div>' +
-        '<div class="setup-item"><span>CB weekly cap</span><strong>' + hours(state.settings.caps.weekly) + 'h</strong></div>' +
+        '<div class="setup-item"><span>Contract weekly cap</span><strong>' + hours(state.settings.caps.weekly) + 'h</strong></div>' +
         '<div class="setup-item"><span>Manual entries</span><strong>' + state.manualEntries.length + '</strong></div>' +
         '<div class="setup-item"><span>Rows from StaffMe</span><strong>' + state.rows.length + '</strong></div>';
 
@@ -1395,8 +1384,8 @@
             }).join('') + '</div><div class="field-help">A shift is classified by its starting day. All other days become coverage days automatically.</div></div>' +
             '<div class="field-grid"><div class="field"><label for="workTarget">Work Hours target</label><input id="workTarget" type="number" min="0" step=".01" value="' + state.settings.targets.work + '"></div><div class="field"><label for="coverageTarget">InCoverage target</label><input id="coverageTarget" type="number" min="0" step=".01" value="' + state.settings.targets.coverage + '"></div></div>' +
             '<div class="field"><label for="weekendTarget">Weekend adherence target</label><input id="weekendTarget" type="number" min="0" step=".01" value="' + state.settings.targets.weekend + '"></div>' +
-            '<div class="field-grid"><div class="field"><label for="dailyCap">Daily work cap reminder</label><input id="dailyCap" type="number" min="0" step=".01" value="' + state.settings.caps.daily + '"></div><div class="field"><label for="weeklyCap">CB weekly work cap</label><input id="weeklyCap" type="number" min="0" step=".01" value="' + state.settings.caps.weekly + '"></div></div>' +
-            '<div class="field-help">The default limits come from the StaffMe guideline: 12 hours per day and 75 hours per CB calendar week.</div>' +
+            '<div class="field-grid"><div class="field"><label for="dailyCap">Daily work cap reminder</label><input id="dailyCap" type="number" min="0" step=".01" value="' + state.settings.caps.daily + '"></div><div class="field"><label for="weeklyCap">Contract weekly work cap</label><input id="weeklyCap" type="number" min="0" step=".01" value="' + state.settings.caps.weekly + '"></div></div>' +
+            '<div class="field-help">The default limits come from the StaffMe guideline: 12 hours per day and 75 hours per contract coverage week.</div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
           '</form>' +
         '</div></div>';
