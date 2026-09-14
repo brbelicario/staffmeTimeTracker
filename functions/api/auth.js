@@ -96,10 +96,12 @@ async function ensureTables(db) {
   await db.batch([
     db.prepare('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT, picture TEXT, password_salt TEXT, password_hash TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)'),
     db.prepare('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL)'),
-    db.prepare('CREATE TABLE IF NOT EXISTS tracker_profiles (profile_key TEXT PRIMARY KEY, settings_json TEXT NOT NULL DEFAULT \'{}\', rows_json TEXT NOT NULL DEFAULT \'[]\', last_sync TEXT, updated_at TEXT NOT NULL)')
+    db.prepare('CREATE TABLE IF NOT EXISTS tracker_profiles (profile_key TEXT PRIMARY KEY, settings_json TEXT NOT NULL DEFAULT \'{}\', rows_json TEXT NOT NULL DEFAULT \'[]\', manual_entries_json TEXT NOT NULL DEFAULT \'[]\', reported_weeks_json TEXT NOT NULL DEFAULT \'[]\', last_sync TEXT, updated_at TEXT NOT NULL)')
   ]);
   try { await db.prepare('ALTER TABLE users ADD COLUMN password_salt TEXT').run(); } catch (error) {}
   try { await db.prepare('ALTER TABLE users ADD COLUMN password_hash TEXT').run(); } catch (error) {}
+  try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN manual_entries_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
+  try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN reported_weeks_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
 }
 
 async function currentUser(request, db) {
