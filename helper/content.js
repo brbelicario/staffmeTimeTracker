@@ -30,7 +30,7 @@
     "raw.githubusercontent.com"
   ]);
 
-  const staffMeHosts = new Set(["script.google.com"]);
+  const staffMeHosts = new Set(["script.google.com", "script.googleusercontent.com"]);
   const hasAncestorHost = (hosts) => hosts.some((host) => trackerHosts.has(host));
   const hasAncestorStaffMeHost = (hosts) => hosts.some((host) => staffMeHosts.has(host));
 
