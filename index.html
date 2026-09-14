@@ -311,7 +311,7 @@
       <div class="content-grid">
         <section class="panel">
           <div class="panel-head">
-            <div><div class="week-label">Selected week</div><h2 id="weekTitle">Current week</h2><p>Hours are grouped by the shift start day.</p></div>
+            <div><div class="week-label">Selected week</div><h2 id="weekTitle">Current week</h2><p>Hourly rows use the actual calendar date shown by StaffMe.</p></div>
           </div>
           <div class="week-summary" id="weekSummary"></div>
           <div id="metricBars"></div>
@@ -343,7 +343,7 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Agreement calendar</div><h2>Adherence calendar</h2><p>Each shift is classified by its start date. Overnight hours after midnight stay with that shift.</p></div>
+          <div><div class="week-label">Agreement calendar</div><h2>Adherence calendar</h2><p>Each hourly row is classified using its actual calendar date. Overnight rows after midnight belong to that calendar date.</p></div>
         </div>
         <div id="contractCalendar"></div>
       </section>
@@ -352,7 +352,7 @@
         <div class="panel-head">
           <div><div class="week-label">Agreement daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the agreement term.</p></div>
         </div>
-        <div class="table-scroll"><table class="day-table"><thead><tr><th>Shift date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead><tbody id="dayRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
@@ -521,7 +521,7 @@
       if (range && range.invalid) return { range: range, groups: [], work: 0, coverage: 0, adherence: 0 };
 
       state.rows.forEach(function(row) {
-        const date = shiftDateFor(row);
+        const date = calendarDateFor(row);
         if (!date || (range && !dateInRange(date, range))) return;
         const value = row.workedHours;
         work += value;
@@ -554,7 +554,7 @@
 
         const week = { index: index, start: new Date(start), end: new Date(end), work: 0, coverage: 0, adherence: 0 };
         state.rows.forEach(function(row) {
-          const date = shiftDateFor(row);
+          const date = calendarDateFor(row);
           if (!date || date < week.start || date > week.end) return;
           const value = row.workedHours;
           week.work += value;
@@ -732,16 +732,10 @@
       return Array.from(map.values());
     }
 
-    function shiftDateFor(row) {
+    function calendarDateFor(row) {
       const date = parseDate(row.date);
       if (!date) return null;
       date.setHours(12, 0, 0, 0);
-      const start = parseMinutes(state.settings.start);
-      const end = parseMinutes(state.settings.end);
-      const time = parseMinutes(row.time);
-      if (start !== null && end !== null && time !== null && end < start && time <= end) {
-        date.setDate(date.getDate() - 1);
-      }
       return date;
     }
 
@@ -800,7 +794,7 @@
       let weekend = 0;
 
       state.rows.forEach(function(row) {
-        const date = shiftDateFor(row);
+        const date = calendarDateFor(row);
         if (!date || (range && (range.invalid || !dateInRange(date, range))) || !isInWeek(date, start)) return;
         const value = row.workedHours;
         work += value;
@@ -966,9 +960,9 @@
       });
       document.getElementById('rowCount').textContent = state.rows.length + ' rows';
       document.getElementById('hourRows').innerHTML = preview.length ? preview.map(function(row) {
-        const shiftDate = shiftDateFor(row);
+        const calendarDate = calendarDateFor(row);
         const inDuty = withinDutyWindow(row);
-        const adherence = Boolean(shiftDate && categoryFor(shiftDate) === 'adherence');
+        const adherence = Boolean(calendarDate && categoryFor(calendarDate) === 'adherence');
         const badges = !inDuty
           ? '<span class="tag tag-neutral">Outside duty</span>'
           : (adherence ? '<span class="tag tag-adherence">Weekend adherence</span>' : '') +
@@ -996,7 +990,7 @@
           '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Schedule settings</h2></div><button class="close" id="closeModal">×</button></div>' +
           '<form id="settingsForm">' +
             '<div class="field-grid"><div class="field"><label for="contractStart">Agreement starts</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Agreement ends</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
-            '<div class="field-help">The dates are inclusive. An overnight shift is assigned to the date it starts.</div>' +
+            '<div class="field-help">The dates are inclusive. Overnight rows are classified using the calendar date shown by StaffMe.</div>' +
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence days</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
