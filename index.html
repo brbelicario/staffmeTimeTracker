@@ -197,6 +197,16 @@
     .day-choice input:checked + span { color: #fff; border-color: var(--navy); background: var(--navy); }
     .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
     .toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; padding: 13px 16px; color: white; background: var(--navy); border-radius: 12px; box-shadow: var(--shadow); font-size: .84rem; }
+
+    .auth-tabs { display: flex; gap: 7px; padding: 5px; margin: 24px 0 18px; border-radius: 13px; background: #f1f4f8; }
+    .auth-tab { flex: 1; border: 0; border-radius: 9px; padding: 10px 12px; color: var(--muted); background: transparent; font-weight: 850; }
+    .auth-tab.active { color: white; background: var(--navy); box-shadow: 0 5px 12px rgba(24,41,68,.16); }
+    .auth-form { display: grid; gap: 3px; }
+    .auth-form .btn { width: 100%; margin-top: 8px; }
+    .auth-error { margin-top: 13px; padding: 11px 12px; border: 1px solid #f1c3c3; border-radius: 11px; color: #a53c3c; background: #fff2f2; font-size: .82rem; line-height: 1.4; }
+    .auth-divider { display: flex; align-items: center; gap: 10px; margin: 20px 0 13px; color: var(--muted); font-size: .75rem; font-weight: 800; }
+    .auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+    .auth-note { margin-top: 16px; }
     [hidden] { display: none !important; }
     @media (max-width: 900px) {
       .content-grid { grid-template-columns: 1fr; }
@@ -229,16 +239,54 @@
   <main class="shell">
     <section id="loginView" class="login-shell">
       <div class="login-card">
-        <div class="eyebrow">Private tracker prototype</div>
+        <div class="eyebrow">Private tracker</div>
         <h1>See every hour clearly.</h1>
-        <p class="intro">Sign in with your Google account to open your private tracker profile. Configure your duty schedule, choose adherence days, and keep your statistics across devices.</p>
-        <div class="form-row">
-          <button class="btn btn-primary" id="googleLoginBtn" type="button">Continue with Google</button>
+        <p class="intro">Create an account or log in to keep your StaffMe statistics saved across devices.</p>
+
+        <div class="auth-tabs" role="tablist" aria-label="Account access">
+          <button class="auth-tab active" id="loginTab" type="button">Log in</button>
+          <button class="auth-tab" id="registerTab" type="button">Create account</button>
         </div>
-        <div class="note"><span>●</span><div><strong>Passwordless account.</strong> Google verifies your identity. The tracker never asks for or stores your StaffMe password. Hourly rows are captured only from StaffMe and saved to your account.</div></div>
+
+        <form id="loginForm" class="auth-form">
+          <div class="field">
+            <label for="loginEmail">Email</label>
+            <input id="loginEmail" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+          </div>
+          <div class="field">
+            <label for="loginPassword">Password</label>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required>
+          </div>
+          <button class="btn btn-primary" id="loginSubmit" type="submit">Log in</button>
+        </form>
+
+        <form id="registerForm" class="auth-form" hidden>
+          <div class="field">
+            <label for="registerName">Name</label>
+            <input id="registerName" name="name" type="text" autocomplete="name" placeholder="Your name" required>
+          </div>
+          <div class="field">
+            <label for="registerEmail">Email</label>
+            <input id="registerEmail" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+          </div>
+          <div class="field">
+            <label for="registerPassword">Password</label>
+            <input id="registerPassword" name="password" type="password" autocomplete="new-password" placeholder="At least 8 characters" minlength="8" required>
+          </div>
+          <div class="field">
+            <label for="registerPasswordConfirm">Confirm password</label>
+            <input id="registerPasswordConfirm" name="passwordConfirm" type="password" autocomplete="new-password" placeholder="Re-enter your password" minlength="8" required>
+          </div>
+          <button class="btn btn-primary" id="registerSubmit" type="submit">Create account</button>
+        </form>
+
+        <div id="authError" class="auth-error" hidden></div>
+
+        <div class="auth-divider"><span>optional</span></div>
+        <button class="btn btn-cyan" id="googleLoginBtn" type="button">Continue with Google</button>
+        <div class="note auth-note"><span>●</span><div><strong>Your account controls access.</strong> Your schedule and StaffMe hourly rows are stored under your account so you can log in from another device. Google sign-in remains optional and uses the same account email when configured.</div></div>
       </div>
     </section>
-
     <section id="dashboardView" hidden>
       <div class="dashboard-head">
         <div>
@@ -396,7 +444,6 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email: state.email,
             settings: state.settings,
             rows: state.rows,
             lastSync: state.lastSync
@@ -947,29 +994,85 @@
       });
     }
 
+    function setAuthMode(mode) {
+      const loginMode = mode === 'login';
+      document.getElementById('loginTab').classList.toggle('active', loginMode);
+      document.getElementById('registerTab').classList.toggle('active', !loginMode);
+      document.getElementById('loginForm').hidden = !loginMode;
+      document.getElementById('registerForm').hidden = loginMode;
+      showAuthError('');
+    }
+
+    function showAuthError(message) {
+      const root = document.getElementById('authError');
+      root.textContent = message || '';
+      root.hidden = !message;
+    }
+
+    function activateUser(user) {
+      state.user = user;
+      state.email = String(user.email || '').toLowerCase();
+      if (!loadProfile(state.email)) {
+        state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+        state.rows = [];
+        state.source = 'waiting';
+        state.lastSync = null;
+        state.helperStatus = null;
+        saveProfile();
+      }
+      state.remoteStatus = 'loading';
+      render();
+      window.setTimeout(function() {
+        requestStaffMeRows();
+        pullRemoteProfile();
+      }, 150);
+    }
+
+    async function submitAuth(mode) {
+      const form = document.getElementById(mode + 'Form');
+      const button = form.querySelector('button[type="submit"]');
+      const payload = {};
+      new FormData(form).forEach(function(value, key) { payload[key] = String(value); });
+      showAuthError('');
+      button.disabled = true;
+      button.textContent = mode === 'register' ? 'Creating account...' : 'Logging in...';
+      try {
+        const response = await fetch('/api/auth?mode=' + mode, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json().catch(function() { return {}; });
+        if (!response.ok || !result.ok) throw new Error(result.error || 'Authentication failed.');
+        form.reset();
+        activateUser(result.user);
+      } catch (error) {
+        showAuthError(error.message || 'Authentication failed.');
+      } finally {
+        button.disabled = false;
+        button.textContent = mode === 'register' ? 'Create account' : 'Log in';
+      }
+    }
+
     async function restoreSession() {
       try {
         const response = await fetch('/api/auth?mode=me', { cache: 'no-store' });
         if (!response.ok) return;
         const result = await response.json();
-        state.user = result.user;
-        state.email = String(result.user.email || '').toLowerCase();
-        if (!loadProfile(state.email)) {
-          state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-          state.rows = [];
-          state.source = 'waiting';
-          state.lastSync = null;
-          state.helperStatus = null;
-          saveProfile();
-        }
-        state.remoteStatus = 'loading';
-        render();
-        window.setTimeout(function() {
-          requestStaffMeRows();
-          pullRemoteProfile();
-        }, 150);
+        if (result.user) activateUser(result.user);
       } catch (error) {}
     }
+
+    document.getElementById('loginTab').addEventListener('click', function() { setAuthMode('login'); });
+    document.getElementById('registerTab').addEventListener('click', function() { setAuthMode('register'); });
+    document.getElementById('loginForm').addEventListener('submit', function(event) {
+      event.preventDefault();
+      submitAuth('login');
+    });
+    document.getElementById('registerForm').addEventListener('submit', function(event) {
+      event.preventDefault();
+      submitAuth('register');
+    });
 
     document.getElementById('googleLoginBtn').addEventListener('click', function() {
       window.location.href = '/api/auth?mode=start';
