@@ -147,6 +147,8 @@
     .cap-warning { margin: 0 0 16px; padding: 12px 14px; border: 1px solid #f1c3c3; border-radius: 13px; color: #8f3b3b; background: #fff5f5; font-size: .82rem; line-height: 1.5; }
     .report-help { margin: -5px 0 14px; }
     .inline-number { display: inline-block; width: 100%; }
+    .report-input:disabled { color: var(--muted); background: #f3f5f8; cursor: not-allowed; opacity: .82; }
+    .report-lock { margin-left: 5px; vertical-align: middle; }
     .content-grid { display: grid; grid-template-columns: 1.45fr .85fr; gap: 16px; margin-top: 16px; }
     .panel { padding: 21px; }
     .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
@@ -355,7 +357,7 @@
         </div>
         <div class="contract-total-grid" id="contractSummary"></div>
         <div class="week-label average-label">Monthly average view</div>
-        <p class="muted average-help">Work is the total of all imported rows. Coverage and weekend adherence are averaged per agreement week against their weekly targets.</p>
+        <p class="muted average-help">Completed agreement weeks use saved email values when available. Current and future weeks use live StaffMe plus manual totals; averages are calculated per agreement week against the weekly targets.</p>
         <div class="contract-total-grid" id="contractAverage"></div>
         <div class="table-scroll">
           <table class="day-table contract-week-table">
@@ -367,7 +369,7 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Weekly performance email</div><h2>Reported weekly metrics</h2><p>Enter the values from your weekly StaffMe performance email. These values stay separate and are not added again to tracked hours.</p></div>
+          <div><div class="week-label">Weekly performance email</div><h2>Reported weekly metrics</h2><p>Enter the values from your weekly StaffMe performance email. Completed weeks update the agreement totals; current and future weeks remain live tracked totals.</p></div>
         </div>
         <div class="note report-help"><span>●</span><div>Use this for the email’s contract/coverage-week table, such as Week 1: 70.59 Work, 52.54 InCoverage, and 17.39 Weekend adherence.</div></div>
         <div class="table-scroll"><table class="day-table report-table"><thead><tr><th>Agreement week</th><th>Date range</th><th>Reported work</th><th>Reported InCoverage</th><th>Reported adherence</th></tr></thead><tbody id="reportedWeekRows"></tbody></table></div>
@@ -1082,23 +1084,75 @@
       });
     }
 
+    function reportedForWeek(week) {
+      const key = isoDate(week.start);
+      return normalizeReportedWeeks(state.reportedWeeks).find(function(report) { return report.start === key; }) || null;
+    }
+
+    function reportWeekLocked(week) {
+      const range = contractRange();
+      if (!range || range.invalid) return true;
+      const today = new Date();
+      today.setHours(12, 0, 0, 0);
+      if (today > range.end) return false;
+      if (today < range.start) return true;
+      return week.start >= activeWeek();
+    }
+
+    function officialAgreementWeeks(range) {
+      return contractWeeks(range).map(function(week) {
+        const report = reportedForWeek(week);
+        return Object.assign({}, week, {
+          displayWork: report && report.work !== null ? report.work : week.work,
+          displayCoverage: report && report.coverage !== null ? report.coverage : week.coverage,
+          displayAdherence: report && report.adherence !== null ? report.adherence : week.adherence,
+          workReported: Boolean(report && report.work !== null),
+          coverageReported: Boolean(report && report.coverage !== null),
+          adherenceReported: Boolean(report && report.adherence !== null)
+        });
+      });
+    }
+
+    function summarizeOfficialWeeks(weeks) {
+      return weeks.reduce(function(total, week) {
+        total.work += week.displayWork;
+        total.coverage += week.displayCoverage;
+        total.adherence += week.displayAdherence;
+        return total;
+      }, { work: 0, coverage: 0, adherence: 0 });
+    }
+
+    function officialValueCell(week, valueKey, reportedKey) {
+      const value = week[valueKey];
+      const reported = week[reportedKey];
+      return hours(value) + 'h' + (reported ? ' <span class="tag tag-neutral">Reported</span>' : '');
+    }
+
     function renderReportedWeeks(agreementWeeks) {
       const root = document.getElementById('reportedWeekRows');
+      const saveButton = document.getElementById('saveReportedBtn');
       if (!agreementWeeks.length) {
         root.innerHTML = '<tr><td colspan="5"><div class="empty">Set an agreement term first, then enter the values from each weekly performance email.</div></td></tr>';
+        saveButton.disabled = true;
         return;
       }
       const reports = new Map();
       normalizeReportedWeeks(state.reportedWeeks).forEach(function(report) { reports.set(report.start, report); });
+      let editableWeeks = 0;
       root.innerHTML = agreementWeeks.map(function(week) {
         const report = reports.get(isoDate(week.start)) || {};
+        const locked = reportWeekLocked(week);
+        if (!locked) editableWeeks += 1;
+        const disabled = locked ? ' disabled' : '';
+        const lockBadge = locked ? ' <span class="tag tag-neutral report-lock">Locked</span>' : '';
         const value = function(key) { return report[key] === null || report[key] === undefined ? '' : hours(report[key]); };
         const key = isoDate(week.start);
-        return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td>' +
-          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="work" type="number" min="0" step=".01" value="' + value('work') + '" placeholder="—"></td>' +
-          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="coverage" type="number" min="0" step=".01" value="' + value('coverage') + '" placeholder="—"></td>' +
-          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="adherence" type="number" min="0" step=".01" value="' + value('adherence') + '" placeholder="—"></td></tr>';
+        return '<tr><td>Week ' + week.index + lockBadge + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td>' +
+          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="work" type="number" min="0" step=".01" value="' + value('work') + '" placeholder="—"' + disabled + '></td>' +
+          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="coverage" type="number" min="0" step=".01" value="' + value('coverage') + '" placeholder="—"' + disabled + '></td>' +
+          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="adherence" type="number" min="0" step=".01" value="' + value('adherence') + '" placeholder="—"' + disabled + '></td></tr>';
       }).join('');
+      saveButton.disabled = editableWeeks === 0;
     }
 
     function saveReportedValues() {
@@ -1111,6 +1165,7 @@
       const reports = new Map();
       normalizeReportedWeeks(state.reportedWeeks).forEach(function(report) { reports.set(report.start, report); });
       weeks.forEach(function(week) {
+        if (reportWeekLocked(week)) return;
         const key = isoDate(week.start);
         const values = {};
         ['work', 'coverage', 'adherence'].forEach(function(fieldName) {
@@ -1127,7 +1182,7 @@
       saveProfile();
       queueRemoteSave();
       render();
-      showToast('Weekly performance values saved separately from tracked hours.');
+      showToast('Reported values saved. Completed weeks now update the agreement totals.');
     }
 
     function openManualEntry() {
@@ -1247,21 +1302,23 @@
       }).join('');
 
       const agreementWeeks = contractWeeks(range);
+      const officialWeeks = officialAgreementWeeks(range);
+      const officialSummary = summarizeOfficialWeeks(officialWeeks);
       renderReportedWeeks(agreementWeeks);
       if (termIsValid) {
         document.getElementById('contractSummary').innerHTML = [
-          ['Total work hours', contractSummary.work],
-          ['Total in coverage', contractSummary.coverage],
-          ['Total weekend adherence', contractSummary.adherence]
+          ['Total work hours', officialSummary.work],
+          ['Total in coverage', officialSummary.coverage],
+          ['Total weekend adherence', officialSummary.adherence]
         ].map(function(item) {
           return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong></div>';
         }).join('');
 
-        const weekCount = agreementWeeks.length || 1;
+        const weekCount = officialWeeks.length || 1;
         document.getElementById('contractAverage').innerHTML = [
-          ['Total work hours', contractSummary.work, 'All imported rows in the agreement term.'],
-          ['Average InCoverage', contractSummary.coverage / weekCount, 'Target ' + hours(state.settings.targets.coverage) + 'h per agreement week.'],
-          ['Average weekend adherence', contractSummary.adherence / weekCount, 'Target ' + hours(state.settings.targets.weekend) + 'h per agreement week.']
+          ['Total work hours', officialSummary.work, 'Completed weeks use reported email values when entered.'],
+          ['Average InCoverage', officialSummary.coverage / weekCount, 'Target ' + hours(state.settings.targets.coverage) + 'h per agreement week.'],
+          ['Average weekend adherence', officialSummary.adherence / weekCount, 'Target ' + hours(state.settings.targets.weekend) + 'h per agreement week.']
         ].map(function(item) {
           return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong><small>' + item[2] + '</small></div>';
         }).join('');
@@ -1271,8 +1328,8 @@
       }
 
 
-      document.getElementById('contractWeekRows').innerHTML = agreementWeeks.length ? agreementWeeks.map(function(week) {
-        return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + hours(week.work) + 'h</td><td>' + hours(week.coverage) + 'h</td><td>' + hours(week.adherence) + 'h</td></tr>';
+      document.getElementById('contractWeekRows').innerHTML = officialWeeks.length ? officialWeeks.map(function(week) {
+        return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + officialValueCell(week, 'displayWork', 'workReported') + '</td><td>' + officialValueCell(week, 'displayCoverage', 'coverageReported') + '</td><td>' + officialValueCell(week, 'displayAdherence', 'adherenceReported') + '</td></tr>';
       }).join('') : '<tr><td colspan="5"><div class="empty">Set an agreement term to show weekly contract totals.</div></td></tr>';
 
       renderContractCalendar(range);
