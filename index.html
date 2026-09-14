@@ -161,6 +161,7 @@
     .contract-total { background: #f7f9fc; border: 1px solid #edf0f4; border-radius: 14px; padding: 16px; }
     .contract-total span { display: block; color: var(--muted); font-size: .78rem; font-weight: 800; }
     .contract-total strong { display: block; margin-top: 8px; font-size: 1.35rem; }
+    .contract-total small { display: block; margin-top: 5px; color: var(--muted); font-size: .72rem; line-height: 1.35; }
     .contract-week-table { margin-top: 18px; }
     .calendar-month { margin-top: 18px; }
     .calendar-month h3 { margin: 0 0 10px; font-size: 1rem; }
@@ -283,6 +284,9 @@
           <div><div class="week-label">Agreement term totals</div><h2 id="contractTitle">Agreement term not set</h2><p id="contractSubtitle">Enter the agreement dates in Schedule settings to calculate the contract calendar.</p></div>
         </div>
         <div class="contract-total-grid" id="contractSummary"></div>
+        <div class="week-label average-label">Monthly average view</div>
+        <p class="muted average-help">Work is the total of all imported rows. Coverage and weekend adherence are averaged per agreement week against their weekly targets.</p>
+        <div class="contract-total-grid" id="contractAverage"></div>
         <div class="table-scroll">
           <table class="day-table contract-week-table">
             <thead><tr><th>Agreement week</th><th>Date range</th><th>Work hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead>
@@ -334,8 +338,11 @@
       rows: [],
       source: 'waiting',
       lastSync: null,
-      helperStatus: null
+      helperStatus: null,
+      remoteStatus: 'unknown'
     };
+
+    let remoteSaveTimer = null;
 
     function profileKey(email) {
       return 'staffme-tracker:' + email.trim().toLowerCase();
@@ -350,13 +357,73 @@
       }));
     }
 
+    function mergeSettings(settings) {
+      const merged = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), settings || {});
+      merged.targets = Object.assign({}, DEFAULT_SETTINGS.targets, (settings || {}).targets || {});
+      merged.adherenceDays = Array.isArray(merged.adherenceDays) && merged.adherenceDays.length
+        ? merged.adherenceDays.map(Number).filter(function(day) { return day >= 0 && day <= 6; })
+        : DEFAULT_SETTINGS.adherenceDays.slice();
+      return merged;
+    }
+
+    async function pullRemoteProfile() {
+      if (!state.email) return;
+      state.remoteStatus = 'loading';
+      render();
+      try {
+        const response = await fetch('/api/sync?email=' + encodeURIComponent(state.email), { cache: 'no-store' });
+        if (!response.ok) throw new Error('Cloud sync unavailable');
+        const remote = await response.json();
+        if (remote.found) {
+          state.rows = dedupeRows(state.rows.concat(normalizeRows(remote.rows || [])));
+          if (remote.settings) state.settings = mergeSettings(remote.settings);
+          if (remote.lastSync && (!state.lastSync || new Date(remote.lastSync) > new Date(state.lastSync))) {
+            state.lastSync = remote.lastSync;
+          }
+          if (state.rows.length && state.source === 'waiting') state.source = 'remote';
+          saveProfile();
+        }
+        state.remoteStatus = 'synced';
+      } catch (error) {
+        state.remoteStatus = 'local-only';
+      }
+      render();
+    }
+
+    async function pushRemoteProfile() {
+      if (!state.email) return;
+      try {
+        const response = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: state.email,
+            settings: state.settings,
+            rows: state.rows,
+            lastSync: state.lastSync
+          })
+        });
+        if (!response.ok) throw new Error('Cloud sync unavailable');
+        state.remoteStatus = 'synced';
+        render();
+      } catch (error) {
+        state.remoteStatus = 'local-only';
+        render();
+      }
+    }
+
+    function queueRemoteSave() {
+      if (!state.email) return;
+      window.clearTimeout(remoteSaveTimer);
+      remoteSaveTimer = window.setTimeout(pushRemoteProfile, 250);
+    }
+
     function loadProfile(email) {
       const raw = localStorage.getItem(profileKey(email));
       if (!raw) return false;
       try {
         const saved = JSON.parse(raw);
-        state.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), saved.settings || {});
-        state.settings.targets = Object.assign({}, DEFAULT_SETTINGS.targets, (saved.settings || {}).targets || {});
+        state.settings = mergeSettings(saved.settings);
         const savedSource = saved.source || 'local';
         const savedRows = normalizeRows(saved.rows || []);
         const isDemoProfile = savedSource === 'demo' || savedRows.some(function(row) {
@@ -618,11 +685,22 @@
 
     function activeWeek() {
       const range = contractRange();
-      const dates = state.rows.map(function(row) { return shiftDateFor(row); })
-        .filter(function(date) { return date && (!range || (!range.invalid && dateInRange(date, range))); })
-        .sort(function(a, b) { return a - b; });
-      const latest = dates[dates.length - 1] || new Date();
-      return weekStart(latest);
+      const today = new Date();
+      today.setHours(12, 0, 0, 0);
+
+      if (range && !range.invalid) {
+        const selected = new Date(range.start);
+        if (today > range.end) {
+          const totalDays = Math.floor((range.end - range.start) / 86400000);
+          selected.setDate(selected.getDate() + Math.floor(totalDays / 7) * 7);
+        } else if (today >= range.start) {
+          const elapsedDays = Math.floor((today - range.start) / 86400000);
+          selected.setDate(selected.getDate() + Math.floor(elapsedDays / 7) * 7);
+        }
+        return selected;
+      }
+
+      return weekStart(today);
     }
 
     function isInWeek(date, start) {
@@ -716,7 +794,7 @@
           ? 'StaffMe table detected, but no rows were parsed'
           : 'Waiting for StaffMe hourly data');
       document.getElementById('syncStatus').textContent = sourceLabel;
-      document.getElementById('syncDetail').textContent = hasRows
+      const baseSyncDetail = hasRows
         ? (state.lastSync
           ? state.rows.length + ' hourly rows received from StaffMe. Last sync ' + new Date(state.lastSync).toLocaleString() + '.'
           : state.rows.length + ' hourly rows are stored in this browser.')
@@ -725,6 +803,12 @@
           : state.helperStatus
             ? 'The helper responded, but no StaffMe table was detected yet. Keep the Hourly AHT table open, then refresh.'
             : 'The helper has not responded. Reload the extension, keep StaffMe open, then click Refresh StaffMe data.');
+      const remoteDetail = state.remoteStatus === 'synced'
+        ? ' Cloud copy is available on other devices.'
+        : state.remoteStatus === 'local-only'
+          ? ' Cloud copy is unavailable; this browser is using its saved copy.'
+          : '';
+      document.getElementById('syncDetail').textContent = baseSyncDetail + remoteDetail;
 
       const cards = [
         { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'All StaffMe hourly rows' },
@@ -757,6 +841,7 @@
         return '<div class="bar-row"><div class="bar-label"><span>' + item[0] + '</span><span>' + hours(item[1]) + ' / ' + hours(item[2]) + ' hours</span></div><div class="progress"><span style="width:' + percent(item[1], item[2]) + '%;background:' + (item[3] === 'orange' ? 'var(--orange)' : item[3] === 'green' ? 'var(--green)' : 'var(--cyan)') + '"></span></div></div>';
       }).join('');
 
+      const agreementWeeks = contractWeeks(range);
       if (termIsValid) {
         document.getElementById('contractSummary').innerHTML = [
           ['Total work hours', contractSummary.work],
@@ -765,11 +850,21 @@
         ].map(function(item) {
           return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong></div>';
         }).join('');
+
+        const weekCount = agreementWeeks.length || 1;
+        document.getElementById('contractAverage').innerHTML = [
+          ['Total work hours', contractSummary.work, 'All imported rows in the agreement term.'],
+          ['Average InCoverage', contractSummary.coverage / weekCount, 'Target ' + hours(state.settings.targets.coverage) + 'h per agreement week.'],
+          ['Average weekend adherence', contractSummary.adherence / weekCount, 'Target ' + hours(state.settings.targets.weekend) + 'h per agreement week.']
+        ].map(function(item) {
+          return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong><small>' + item[2] + '</small></div>';
+        }).join('');
       } else {
         document.getElementById('contractSummary').innerHTML = '<div class="empty">Set an agreement term to calculate contract totals.</div>';
+        document.getElementById('contractAverage').innerHTML = '<div class="empty">Set an agreement term to calculate monthly averages.</div>';
       }
 
-      const agreementWeeks = contractWeeks(range);
+
       document.getElementById('contractWeekRows').innerHTML = agreementWeeks.length ? agreementWeeks.map(function(week) {
         return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + hours(week.work) + 'h</td><td>' + hours(week.coverage) + 'h</td><td>' + hours(week.adherence) + 'h</td></tr>';
       }).join('') : '<tr><td colspan="5"><div class="empty">Set an agreement term to show weekly contract totals.</div></td></tr>';
@@ -846,6 +941,7 @@
           weekend: numberValue(document.getElementById('weekendTarget').value)
         };
         saveProfile();
+        queueRemoteSave();
         closeModal();
         render();
         showToast('Schedule settings saved.');
@@ -863,15 +959,20 @@
         state.source = 'waiting';
         state.lastSync = null;
         state.helperStatus = null;
+        state.remoteStatus = 'loading';
         saveProfile();
       }
       render();
-      window.setTimeout(requestStaffMeRows, 150);
+      window.setTimeout(function() {
+        requestStaffMeRows();
+        pullRemoteProfile();
+      }, 150);
     });
 
     document.getElementById('logoutBtn').addEventListener('click', function() {
       state.email = '';
       state.helperStatus = null;
+      state.remoteStatus = 'unknown';
       closeModal();
       render();
     });
@@ -912,6 +1013,7 @@
         state.source = 'helper';
         state.lastSync = event.data.lastSync || new Date().toISOString();
         saveProfile();
+        queueRemoteSave();
         render();
         showToast('StaffMe hourly rows refreshed.');
       } catch (error) {
