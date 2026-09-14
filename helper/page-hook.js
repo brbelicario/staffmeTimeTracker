@@ -53,6 +53,8 @@
     const date = clean(value[0]);
     const time = clean(value[1]);
     if (!date || !time || date.length > 40 || time.length > 30) return null;
+    if (!/[A-Za-z]{3,}|\\d{1,2}[\\/-]\\d{1,2}/.test(date)) return null;
+    if (!/\\d{1,2}:\\d{2}|[ap]m/i.test(time)) return null;
 
     return {
       date,
