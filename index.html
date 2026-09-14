@@ -132,6 +132,21 @@
     .metric-card.orange .progress > span { background: var(--orange); }
     .metric-card.green .progress > span { background: var(--green); }
     .metric-foot { display: flex; justify-content: space-between; color: var(--muted); font-size: .78rem; margin-top: 10px; }
+    .manual-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+    .manual-table input, .report-table input { min-width: 94px; padding: 8px 9px; }
+    .manual-table td:last-child, .manual-table th:last-child { text-align: right; }
+    .report-table td:last-child, .report-table th:last-child { text-align: right; }
+    .cap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .cap-card { padding: 15px; border: 1px solid #edf0f4; border-radius: 14px; background: #f7f9fc; }
+    .cap-card strong { display: block; font-size: 1.05rem; letter-spacing: -.02em; }
+    .cap-card span { display: block; color: var(--muted); font-size: .75rem; margin-top: 5px; line-height: 1.4; }
+    .cap-status { display: inline-flex; border-radius: 999px; padding: 4px 8px; font-size: .68rem; font-weight: 850; }
+    .cap-status.ok { color: #217a58; background: var(--green-soft); }
+    .cap-status.near { color: #a35c22; background: var(--orange-soft); }
+    .cap-status.over { color: #a53c3c; background: #fff1f1; }
+    .cap-warning { margin: 0 0 16px; padding: 12px 14px; border: 1px solid #f1c3c3; border-radius: 13px; color: #8f3b3b; background: #fff5f5; font-size: .82rem; line-height: 1.5; }
+    .report-help { margin: -5px 0 14px; }
+    .inline-number { display: inline-block; width: 100%; }
     .content-grid { display: grid; grid-template-columns: 1.45fr .85fr; gap: 16px; margin-top: 16px; }
     .panel { padding: 21px; }
     .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
@@ -297,6 +312,7 @@
         </div>
         <div class="head-actions">
           <button class="btn" id="refreshBtn">Refresh StaffMe data</button>
+          <button class="btn" id="manualAddTopBtn">Add manual hours</button>
           <button class="btn btn-cyan" id="settingsBtn">Schedule settings</button>
         </div>
       </div>
@@ -327,6 +343,14 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
+          <div><div class="week-label">Manual additions</div><h2>Other Task and missing hours</h2><p>Add hours that StaffMe cannot provide, such as Other Task or a late-login adjustment.</p></div>
+          <button class="btn btn-primary" id="manualAddBtn">Add manual hours</button>
+        </div>
+        <div class="table-scroll"><table class="day-table manual-table"><thead><tr><th>Date</th><th>Hours</th><th>Classification</th><th>Note</th><th></th></tr></thead><tbody id="manualRows"></tbody></table></div>
+      </section>
+
+      <section class="panel full-panel">
+        <div class="panel-head">
           <div><div class="week-label">Agreement term totals</div><h2 id="contractTitle">Agreement term not set</h2><p id="contractSubtitle">Enter the agreement dates in Schedule settings to calculate the contract calendar.</p></div>
         </div>
         <div class="contract-total-grid" id="contractSummary"></div>
@@ -339,6 +363,23 @@
             <tbody id="contractWeekRows"></tbody>
           </table>
         </div>
+      </section>
+
+      <section class="panel full-panel">
+        <div class="panel-head">
+          <div><div class="week-label">Weekly performance email</div><h2>Reported weekly metrics</h2><p>Enter the values from your weekly StaffMe performance email. These values stay separate and are not added again to tracked hours.</p></div>
+        </div>
+        <div class="note report-help"><span>●</span><div>Use this for the email’s contract/coverage-week table, such as Week 1: 70.59 Work, 52.54 InCoverage, and 17.39 Weekend adherence.</div></div>
+        <div class="table-scroll"><table class="day-table report-table"><thead><tr><th>Agreement week</th><th>Date range</th><th>Reported work</th><th>Reported InCoverage</th><th>Reported adherence</th></tr></thead><tbody id="reportedWeekRows"></tbody></table></div>
+        <div class="modal-actions"><button class="btn btn-primary" id="saveReportedBtn" type="button">Save reported values</button></div>
+      </section>
+
+      <section class="panel full-panel">
+        <div class="panel-head">
+          <div><div class="week-label">CB calendar cap</div><h2>Weekly work-hour reminder</h2><p>CB weeks run on the 1–7, 8–14, 15–21, and remaining-days calendar. Tracked hours include StaffMe rows plus manual entries.</p></div>
+        </div>
+        <div id="capSummary"></div>
+        <div class="table-scroll"><table class="day-table"><thead><tr><th>CB calendar week</th><th>Date range</th><th>Tracked work</th><th>Cap</th><th>Status</th></tr></thead><tbody id="capRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
@@ -375,13 +416,16 @@
       contractStart: '',
       contractEnd: '',
       adherenceDays: [0, 1],
-      targets: { work: 45, coverage: 40, weekend: 16 }
+      targets: { work: 45, coverage: 40, weekend: 16 },
+      caps: { daily: 12, weekly: 75 }
     };
 
     let state = {
       email: '',
       settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
       rows: [],
+      manualEntries: [],
+      reportedWeeks: [],
       source: 'waiting',
       lastSync: null,
       helperStatus: null,
@@ -399,6 +443,8 @@
       localStorage.setItem(profileKey(state.email), JSON.stringify({
         settings: state.settings,
         rows: state.rows,
+        manualEntries: state.manualEntries,
+        reportedWeeks: state.reportedWeeks,
         source: state.source,
         lastSync: state.lastSync
       }));
@@ -407,6 +453,7 @@
     function mergeSettings(settings) {
       const merged = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), settings || {});
       merged.targets = Object.assign({}, DEFAULT_SETTINGS.targets, (settings || {}).targets || {});
+      merged.caps = Object.assign({}, DEFAULT_SETTINGS.caps, (settings || {}).caps || {});
       merged.adherenceDays = Array.isArray(merged.adherenceDays) && merged.adherenceDays.length
         ? merged.adherenceDays.map(Number).filter(function(day) { return day >= 0 && day <= 6; })
         : DEFAULT_SETTINGS.adherenceDays.slice();
@@ -423,6 +470,8 @@
         const remote = await response.json();
         if (remote.found) {
           state.rows = dedupeRows(state.rows.concat(normalizeRows(remote.rows || [])));
+          state.manualEntries = mergeManualEntries(state.manualEntries, normalizeManualEntries(remote.manualEntries || []));
+          state.reportedWeeks = mergeReportedWeeks(state.reportedWeeks, normalizeReportedWeeks(remote.reportedWeeks || []));
           if (remote.settings) state.settings = mergeSettings(remote.settings);
           if (remote.lastSync && (!state.lastSync || new Date(remote.lastSync) > new Date(state.lastSync))) {
             state.lastSync = remote.lastSync;
@@ -431,7 +480,7 @@
           saveProfile();
         }
         state.remoteStatus = 'synced';
-        if (state.rows.length) queueRemoteSave();
+        if (state.rows.length || state.manualEntries.length || state.reportedWeeks.length) queueRemoteSave();
       } catch (error) {
         state.remoteStatus = 'local-only';
       }
@@ -447,6 +496,8 @@
           body: JSON.stringify({
             settings: state.settings,
             rows: state.rows,
+            manualEntries: state.manualEntries,
+            reportedWeeks: state.reportedWeeks,
             lastSync: state.lastSync
           })
         });
@@ -477,6 +528,8 @@
           return String(row.agent || '').toLowerCase() === 'demo agent';
         });
         state.rows = isDemoProfile ? [] : savedRows;
+        state.manualEntries = normalizeManualEntries(saved.manualEntries || []);
+        state.reportedWeeks = normalizeReportedWeeks(saved.reportedWeeks || []);
         state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
         state.lastSync = saved.lastSync || null;
         state.helperStatus = null;
@@ -520,22 +573,22 @@
       let adherence = 0;
       if (range && range.invalid) return { range: range, groups: [], work: 0, coverage: 0, adherence: 0 };
 
-      state.rows.forEach(function(row) {
-        const date = calendarDateFor(row);
+      trackedItems().forEach(function(item) {
+        const date = item.date;
         if (!date || (range && !dateInRange(date, range))) return;
-        const value = row.workedHours;
+        const value = item.value;
         work += value;
         const key = isoDate(date);
         if (!groups.has(key)) groups.set(key, { date: date, total: 0, coverage: 0, adherence: 0 });
         const group = groups.get(key);
         group.total += value;
-        if (withinDutyWindow(row)) {
+        if (item.coverage) {
           coverage += value;
           group.coverage += value;
-          if (categoryFor(date) === 'adherence') {
-            adherence += value;
-            group.adherence += value;
-          }
+        }
+        if (item.adherence) {
+          adherence += value;
+          group.adherence += value;
         }
       });
 
@@ -553,15 +606,13 @@
         if (end > range.end) end.setTime(range.end.getTime());
 
         const week = { index: index, start: new Date(start), end: new Date(end), work: 0, coverage: 0, adherence: 0 };
-        state.rows.forEach(function(row) {
-          const date = calendarDateFor(row);
+        trackedItems().forEach(function(item) {
+          const date = item.date;
           if (!date || date < week.start || date > week.end) return;
-          const value = row.workedHours;
+          const value = item.value;
           week.work += value;
-          if (withinDutyWindow(row)) {
-            week.coverage += value;
-            if (categoryFor(date) === 'adherence') week.adherence += value;
-          }
+          if (item.coverage) week.coverage += value;
+          if (item.adherence) week.adherence += value;
         });
         weeks.push(week);
         start = new Date(end);
@@ -569,6 +620,76 @@
         index += 1;
       }
       return weeks;
+    }
+
+    function cbWeekRangeFor(date) {
+      const startDay = Math.floor((date.getDate() - 1) / 7) * 7 + 1;
+      const start = new Date(date.getFullYear(), date.getMonth(), startDay, 12, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 12, 0, 0);
+      if (end > monthEnd) end.setTime(monthEnd.getTime());
+      return { start: start, end: end, index: Math.floor((date.getDate() - 1) / 7) + 1, key: isoDate(start) };
+    }
+
+    function cbCalendarRows(range) {
+      const map = new Map();
+      function addBucket(bucket) {
+        if (!map.has(bucket.key)) map.set(bucket.key, { key: bucket.key, start: bucket.start, end: bucket.end, index: bucket.index, work: 0 });
+        return map.get(bucket.key);
+      }
+      trackedItems().forEach(function(item) {
+        if (range && range.invalid) return;
+        if (range && !dateInRange(item.date, range)) return;
+        const row = addBucket(cbWeekRangeFor(item.date));
+        row.work += item.value;
+      });
+      if (range && !range.invalid) {
+        let cursor = new Date(range.start);
+        while (cursor <= range.end) {
+          addBucket(cbWeekRangeFor(cursor));
+          cursor.setDate(cursor.getDate() + 1);
+        }
+      }
+      if (!map.size) addBucket(cbWeekRangeFor(new Date()));
+      return Array.from(map.values()).sort(function(a, b) { return a.start - b.start; });
+    }
+
+    function dailyCapWarnings(range) {
+      const cap = Number(state.settings.caps.daily || 0);
+      if (!cap) return [];
+      const map = new Map();
+      trackedItems().forEach(function(item) {
+        if (range && (range.invalid || !dateInRange(item.date, range))) return;
+        const key = isoDate(item.date);
+        map.set(key, (map.get(key) || 0) + item.value);
+      });
+      return Array.from(map.entries()).map(function(entry) {
+        return { date: parseDate(entry[0]), work: entry[1] };
+      }).filter(function(entry) { return entry.work > cap; }).sort(function(a, b) { return b.work - a.work; });
+    }
+
+    function renderCapMonitor(range) {
+      const cap = Number(state.settings.caps.weekly || 75);
+      const rows = cbCalendarRows(range);
+      const currentBucket = cbWeekRangeFor(new Date());
+      const current = rows.find(function(row) { return row.key === currentBucket.key; }) || currentBucket;
+      const dailyWarnings = dailyCapWarnings(range);
+      const currentStatus = current.work > cap ? 'over' : current.work >= cap * .9 ? 'near' : 'ok';
+      const statusLabel = currentStatus === 'over' ? 'Over cap' : currentStatus === 'near' ? 'Near cap' : 'Within cap';
+      const warningText = dailyWarnings.length
+        ? '<div class="cap-warning"><strong>Daily cap warning:</strong> ' + dailyWarnings.slice(0, 3).map(function(item) { return formatDate(item.date) + ' has ' + hours(item.work) + 'h'; }).join('; ') + (dailyWarnings.length > 3 ? '; +' + (dailyWarnings.length - 3) + ' more.' : '.') + ' Daily limit: ' + hours(state.settings.caps.daily) + 'h.</div>'
+        : '';
+      document.getElementById('capSummary').innerHTML = warningText +
+        '<div class="cap-grid">' +
+          '<div class="cap-card"><strong>Current CB week: ' + hours(current.work) + 'h / ' + hours(cap) + 'h</strong><span>' + formatDate(current.start) + ' – ' + formatDate(current.end) + ' · <span class="cap-status ' + currentStatus + '">' + statusLabel + '</span></span></div>' +
+          '<div class="cap-card"><strong>Daily reminder: ' + hours(state.settings.caps.daily) + 'h</strong><span>Tracked work is checked by actual calendar date. Reported email values are kept separate.</span></div>' +
+        '</div>';
+      document.getElementById('capRows').innerHTML = rows.map(function(row) {
+        const status = row.work > cap ? 'over' : row.work >= cap * .9 ? 'near' : 'ok';
+        const label = status === 'over' ? 'Over cap' : status === 'near' ? 'Near cap' : 'Within cap';
+        return '<tr><td>CB Week ' + row.index + '</td><td>' + formatDate(row.start) + ' – ' + formatDate(row.end) + '</td><td>' + hours(row.work) + 'h</td><td>' + hours(cap) + 'h</td><td><span class="cap-status ' + status + '">' + label + '</span></td></tr>';
+      }).join('');
     }
 
     function renderContractCalendar(range) {
@@ -702,6 +823,69 @@
       });
     }
 
+    function makeId(prefix) {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') return prefix + '-' + window.crypto.randomUUID();
+      return prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    }
+
+    function normalizeManualEntries(entries) {
+      return (Array.isArray(entries) ? entries : []).map(function(entry, index) {
+        const date = String(entry && entry.date || '').slice(0, 10);
+        const category = ['adherence', 'coverage', 'outside'].indexOf(String(entry && entry.category || '')) >= 0
+          ? String(entry.category)
+          : 'outside';
+        return {
+          id: String(entry && entry.id || ('manual-' + index + '-' + date)),
+          date: date,
+          hours: numberValue(entry && entry.hours),
+          category: category,
+          note: String(entry && entry.note || '').trim().slice(0, 240)
+        };
+      }).filter(function(entry) {
+        return Boolean(parseDate(entry.date)) && entry.hours > 0;
+      });
+    }
+
+    function normalizeReportedWeeks(entries) {
+      return (Array.isArray(entries) ? entries : []).map(function(entry) {
+        const start = String(entry && entry.start || '').slice(0, 10);
+        const end = String(entry && entry.end || '').slice(0, 10);
+        return {
+          index: Math.max(1, Math.floor(numberValue(entry && entry.index) || 1)),
+          start: start,
+          end: end,
+          work: optionalNumber(entry && entry.work),
+          coverage: optionalNumber(entry && entry.coverage),
+          adherence: optionalNumber(entry && entry.adherence)
+        };
+      }).filter(function(entry) {
+        return Boolean(parseDate(entry.start));
+      });
+    }
+
+    function mergeManualEntries(localEntries, remoteEntries) {
+      const map = new Map();
+      normalizeManualEntries(localEntries).forEach(function(entry) { map.set(entry.id, entry); });
+      normalizeManualEntries(remoteEntries).forEach(function(entry) { map.set(entry.id, entry); });
+      return Array.from(map.values());
+    }
+
+    function mergeReportedWeeks(localEntries, remoteEntries) {
+      const map = new Map();
+      normalizeReportedWeeks(localEntries).forEach(function(entry) { map.set(entry.start, entry); });
+      normalizeReportedWeeks(remoteEntries).forEach(function(entry) { map.set(entry.start, entry); });
+      return Array.from(map.values()).sort(function(a, b) { return a.start.localeCompare(b.start); });
+    }
+
+    function escapeHtml(value) {
+      return String(value === undefined || value === null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function unwrapImported(value) {
       if (typeof value === 'string') {
         try { return unwrapImported(JSON.parse(value)); } catch (error) { return []; }
@@ -785,6 +969,39 @@
       return state.settings.adherenceDays.indexOf(date.getDay()) >= 0 ? 'adherence' : 'coverage';
     }
 
+    function trackedItems() {
+      const items = [];
+      state.rows.forEach(function(row) {
+        const date = calendarDateFor(row);
+        if (!date) return;
+        const coverage = withinDutyWindow(row);
+        items.push({
+          source: 'staffme',
+          key: 'staffme:' + rowKey(row),
+          date: date,
+          value: Number(row.workedHours || 0),
+          coverage: coverage,
+          adherence: coverage && categoryFor(date) === 'adherence',
+          row: row
+        });
+      });
+      (state.manualEntries || []).forEach(function(entry) {
+        const date = parseDate(entry.date);
+        if (!date) return;
+        date.setHours(12, 0, 0, 0);
+        items.push({
+          source: 'manual',
+          key: 'manual:' + entry.id,
+          date: date,
+          value: Number(entry.hours || 0),
+          coverage: entry.category !== 'outside',
+          adherence: entry.category === 'adherence',
+          entry: entry
+        });
+      });
+      return items;
+    }
+
     function aggregate() {
       const start = activeWeek();
       const range = contractRange();
@@ -793,22 +1010,22 @@
       let coverage = 0;
       let weekend = 0;
 
-      state.rows.forEach(function(row) {
-        const date = calendarDateFor(row);
+      trackedItems().forEach(function(item) {
+        const date = item.date;
         if (!date || (range && (range.invalid || !dateInRange(date, range))) || !isInWeek(date, start)) return;
-        const value = row.workedHours;
+        const value = item.value;
         work += value;
         const key = isoDate(date);
         if (!groups.has(key)) groups.set(key, { date: date, total: 0, coverage: 0, weekend: 0 });
         const group = groups.get(key);
         group.total += value;
-        if (withinDutyWindow(row)) {
+        if (item.coverage) {
           coverage += value;
           group.coverage += value;
-          if (categoryFor(date) === 'adherence') {
-            weekend += value;
-            group.weekend += value;
-          }
+        }
+        if (item.adherence) {
+          weekend += value;
+          group.weekend += value;
         }
       });
 
@@ -834,6 +1051,122 @@
       if (!date || minutes === null) return 0;
       date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
       return date.getTime();
+    }
+
+    function manualCategoryLabel(category) {
+      if (category === 'adherence') return 'Weekend adherence';
+      if (category === 'coverage') return 'InCoverage';
+      return 'Outside duty / Other Task';
+    }
+
+    function renderManualEntries() {
+      const root = document.getElementById('manualRows');
+      const entries = normalizeManualEntries(state.manualEntries).sort(function(a, b) {
+        return b.date.localeCompare(a.date) || b.id.localeCompare(a.id);
+      });
+      document.getElementById('manualAddBtn').textContent = 'Add manual hours';
+      root.innerHTML = entries.length ? entries.map(function(entry) {
+        const tagClass = entry.category === 'adherence' ? 'tag-adherence' : entry.category === 'coverage' ? 'tag-coverage' : 'tag-neutral';
+        return '<tr><td>' + formatDate(entry.date) + '</td><td>' + hours(entry.hours) + 'h</td><td><span class="tag ' + tagClass + '">' + manualCategoryLabel(entry.category) + '</span></td><td>' + (entry.note ? escapeHtml(entry.note) : '<span class="muted">—</span>') + '</td><td><button class="btn btn-quiet" type="button" data-manual-delete="' + escapeHtml(entry.id) + '">Remove</button></td></tr>';
+      }).join('') : '<tr><td colspan="5"><div class="empty">No manual hours added yet.</div></td></tr>';
+      root.querySelectorAll('[data-manual-delete]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          const id = button.getAttribute('data-manual-delete');
+          if (!window.confirm('Remove this manual hour entry?')) return;
+          state.manualEntries = state.manualEntries.filter(function(entry) { return entry.id !== id; });
+          saveProfile();
+          queueRemoteSave();
+          render();
+          showToast('Manual hours removed.');
+        });
+      });
+    }
+
+    function renderReportedWeeks(agreementWeeks) {
+      const root = document.getElementById('reportedWeekRows');
+      if (!agreementWeeks.length) {
+        root.innerHTML = '<tr><td colspan="5"><div class="empty">Set an agreement term first, then enter the values from each weekly performance email.</div></td></tr>';
+        return;
+      }
+      const reports = new Map();
+      normalizeReportedWeeks(state.reportedWeeks).forEach(function(report) { reports.set(report.start, report); });
+      root.innerHTML = agreementWeeks.map(function(week) {
+        const report = reports.get(isoDate(week.start)) || {};
+        const value = function(key) { return report[key] === null || report[key] === undefined ? '' : hours(report[key]); };
+        const key = isoDate(week.start);
+        return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td>' +
+          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="work" type="number" min="0" step=".01" value="' + value('work') + '" placeholder="—"></td>' +
+          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="coverage" type="number" min="0" step=".01" value="' + value('coverage') + '" placeholder="—"></td>' +
+          '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="adherence" type="number" min="0" step=".01" value="' + value('adherence') + '" placeholder="—"></td></tr>';
+      }).join('');
+    }
+
+    function saveReportedValues() {
+      const range = contractRange();
+      const weeks = contractWeeks(range);
+      if (!weeks.length) {
+        showToast('Set an agreement term before saving weekly values.');
+        return;
+      }
+      const reports = new Map();
+      normalizeReportedWeeks(state.reportedWeeks).forEach(function(report) { reports.set(report.start, report); });
+      weeks.forEach(function(week) {
+        const key = isoDate(week.start);
+        const values = {};
+        ['work', 'coverage', 'adherence'].forEach(function(fieldName) {
+          const input = document.querySelector('[data-report-start="' + key + '"][data-report-field="' + fieldName + '"]');
+          values[fieldName] = input ? optionalNumber(input.value) : null;
+        });
+        if (values.work === null && values.coverage === null && values.adherence === null) {
+          reports.delete(key);
+        } else {
+          reports.set(key, { index: week.index, start: key, end: isoDate(week.end), work: values.work, coverage: values.coverage, adherence: values.adherence });
+        }
+      });
+      state.reportedWeeks = normalizeReportedWeeks(Array.from(reports.values()));
+      saveProfile();
+      queueRemoteSave();
+      render();
+      showToast('Weekly performance values saved separately from tracked hours.');
+    }
+
+    function openManualEntry() {
+      document.getElementById('modalRoot').innerHTML =
+        '<div class="modal-backdrop" id="manualModalBackdrop"><div class="modal">' +
+          '<div class="modal-head"><div><div class="eyebrow">Manual tracking</div><h2>Add manual hours</h2><p class="muted">Every manual entry counts toward Work Hours. Choose whether it also counts as InCoverage or Weekend adherence.</p></div><button class="close" id="closeManualModal" type="button">×</button></div>' +
+          '<form id="manualForm">' +
+            '<div class="field-grid"><div class="field"><label for="manualDate">Date</label><input id="manualDate" type="date" value="' + isoDate(new Date()) + '" required></div><div class="field"><label for="manualHours">Hours</label><input id="manualHours" type="number" min=".01" step=".01" placeholder="e.g. 1.50" required></div></div>' +
+            '<div class="field"><label for="manualCategory">Classification</label><select id="manualCategory"><option value="adherence">Weekend adherence (Work + InCoverage + Weekend)</option><option value="coverage">InCoverage (Work + InCoverage)</option><option value="outside">Outside duty / Other Task (Work only)</option></select></div>' +
+            '<div class="field"><label for="manualNote">Note (optional)</label><input id="manualNote" type="text" maxlength="240" placeholder="e.g. Other Task or late-login adjustment"></div>' +
+            '<div class="field-help">Use the actual calendar date. For a split overnight shift, add separate entries to the dates shown by StaffMe.</div>' +
+            '<div class="modal-actions"><button type="button" class="btn" id="cancelManual">Cancel</button><button type="submit" class="btn btn-primary">Add hours</button></div>' +
+          '</form>' +
+        '</div></div>';
+      document.getElementById('closeManualModal').addEventListener('click', closeModal);
+      document.getElementById('cancelManual').addEventListener('click', closeModal);
+      document.getElementById('manualModalBackdrop').addEventListener('click', function(event) { if (event.target.id === 'manualModalBackdrop') closeModal(); });
+      document.getElementById('manualForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const date = document.getElementById('manualDate').value;
+        const value = optionalNumber(document.getElementById('manualHours').value);
+        const category = document.getElementById('manualCategory').value;
+        if (!parseDate(date) || value === null || value <= 0) {
+          showToast('Enter a valid date and a positive number of hours.');
+          return;
+        }
+        state.manualEntries = normalizeManualEntries(state.manualEntries.concat([{
+          id: makeId('manual'),
+          date: date,
+          hours: value,
+          category: category,
+          note: document.getElementById('manualNote').value
+        }]));
+        saveProfile();
+        queueRemoteSave();
+        closeModal();
+        render();
+        showToast('Manual hours added.');
+      });
     }
 
     function render() {
@@ -883,9 +1216,9 @@
       document.getElementById('syncDetail').textContent = baseSyncDetail + remoteDetail;
 
       const cards = [
-        { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'All StaffMe hourly rows' },
-        { name: 'InCoverage Hours', value: summary.coverage, target: state.settings.targets.coverage, className: 'orange', note: 'Duty-window rows only, including adherence' },
-        { name: 'Weekend adherence hours', value: summary.weekend, target: state.settings.targets.weekend, className: 'green', note: 'Selected adherence days' }
+        { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'StaffMe + manual entries' },
+        { name: 'InCoverage Hours', value: summary.coverage, target: state.settings.targets.coverage, className: 'orange', note: 'Duty-window + manual coverage' },
+        { name: 'Weekend adherence hours', value: summary.weekend, target: state.settings.targets.weekend, className: 'green', note: 'Schedule days + manual adherence' }
       ];
       document.getElementById('metricGrid').innerHTML = cards.map(function(card) {
         return '<article class="metric-card ' + card.className + '">' +
@@ -914,6 +1247,7 @@
       }).join('');
 
       const agreementWeeks = contractWeeks(range);
+      renderReportedWeeks(agreementWeeks);
       if (termIsValid) {
         document.getElementById('contractSummary').innerHTML = [
           ['Total work hours', contractSummary.work],
@@ -942,17 +1276,24 @@
       }).join('') : '<tr><td colspan="5"><div class="empty">Set an agreement term to show weekly contract totals.</div></td></tr>';
 
       renderContractCalendar(range);
+      renderManualEntries();
+      renderCapMonitor(range);
 
       document.getElementById('setupList').innerHTML =
         '<div class="setup-item"><span>Agreement term</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
         '<div class="setup-item"><span>Duty window</span><strong>' + state.settings.start + ' – ' + state.settings.end + '</strong></div>' +
         '<div class="setup-item"><span>Adherence days</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
+        '<div class="setup-item"><span>Daily cap reminder</span><strong>' + hours(state.settings.caps.daily) + 'h</strong></div>' +
+        '<div class="setup-item"><span>CB weekly cap</span><strong>' + hours(state.settings.caps.weekly) + 'h</strong></div>' +
+        '<div class="setup-item"><span>Manual entries</span><strong>' + state.manualEntries.length + '</strong></div>' +
         '<div class="setup-item"><span>Rows from StaffMe</span><strong>' + state.rows.length + '</strong></div>';
 
       document.getElementById('dayRows').innerHTML = contractSummary.groups.length ? contractSummary.groups.map(function(group) {
-        const category = categoryFor(group.date);
-        return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + (category === 'adherence' ? 'tag-adherence' : 'tag-coverage') + '">' + (category === 'adherence' ? 'Adherence' : 'Coverage') + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(group.adherence) + 'h</td></tr>';
+        const classification = group.adherence > 0 ? 'adherence' : group.coverage > 0 ? 'coverage' : 'outside';
+        const tagClass = classification === 'adherence' ? 'tag-adherence' : classification === 'coverage' ? 'tag-coverage' : 'tag-neutral';
+        const tagLabel = classification === 'adherence' ? 'Adherence' : classification === 'coverage' ? 'Coverage' : 'Outside duty';
+        return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + tagClass + '">' + tagLabel + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(group.adherence) + 'h</td></tr>';
       }).join('') : '<tr><td colspan="5"><div class="empty">No rows found for the selected week.</div></td></tr>';
 
       const preview = state.rows.slice().sort(function(a, b) {
@@ -997,6 +1338,8 @@
             }).join('') + '</div><div class="field-help">A shift is classified by its starting day. All other days become coverage days automatically.</div></div>' +
             '<div class="field-grid"><div class="field"><label for="workTarget">Work Hours target</label><input id="workTarget" type="number" min="0" step=".01" value="' + state.settings.targets.work + '"></div><div class="field"><label for="coverageTarget">InCoverage target</label><input id="coverageTarget" type="number" min="0" step=".01" value="' + state.settings.targets.coverage + '"></div></div>' +
             '<div class="field"><label for="weekendTarget">Weekend adherence target</label><input id="weekendTarget" type="number" min="0" step=".01" value="' + state.settings.targets.weekend + '"></div>' +
+            '<div class="field-grid"><div class="field"><label for="dailyCap">Daily work cap reminder</label><input id="dailyCap" type="number" min="0" step=".01" value="' + state.settings.caps.daily + '"></div><div class="field"><label for="weeklyCap">CB weekly work cap</label><input id="weeklyCap" type="number" min="0" step=".01" value="' + state.settings.caps.weekly + '"></div></div>' +
+            '<div class="field-help">The default limits come from the StaffMe guideline: 12 hours per day and 75 hours per CB calendar week.</div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
           '</form>' +
         '</div></div>';
@@ -1020,6 +1363,10 @@
           work: numberValue(document.getElementById('workTarget').value),
           coverage: numberValue(document.getElementById('coverageTarget').value),
           weekend: numberValue(document.getElementById('weekendTarget').value)
+        };
+        state.settings.caps = {
+          daily: numberValue(document.getElementById('dailyCap').value),
+          weekly: numberValue(document.getElementById('weeklyCap').value)
         };
         saveProfile();
         queueRemoteSave();
@@ -1050,6 +1397,8 @@
       if (!loadProfile(state.email)) {
         state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
         state.rows = [];
+        state.manualEntries = [];
+        state.reportedWeeks = [];
         state.source = 'waiting';
         state.lastSync = null;
         state.helperStatus = null;
@@ -1124,6 +1473,9 @@
     });
 
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
+    document.getElementById('manualAddBtn').addEventListener('click', openManualEntry);
+    document.getElementById('manualAddTopBtn').addEventListener('click', openManualEntry);
+    document.getElementById('saveReportedBtn').addEventListener('click', saveReportedValues);
 
     function requestStaffMeRows() {
       window.postMessage({ type: 'STAFFME_REQUEST_DATA' }, '*');
