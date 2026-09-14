@@ -679,11 +679,11 @@
     }
 
     function ahtSecondsFor(row) {
-      const direct = field(row, ['ahtSeconds', 'avgSecondsPerTask', 'avg_seconds_per_task', 'Avg Seconds per Task', 'aht', 'AHT'], null);
+      const direct = field(row, ['ahtSeconds', 'avgSecondsPerTask', 'avg_seconds_per_task', 'Avg Seconds per Task', 'avg seconds per task', 'avgAht', 'aht_seconds', 'aht', 'AHT'], null);
       let result = secondsValue(direct);
       if (result === null) {
-        const totalSeconds = secondsValue(field(row, ['totalCaseSeconds', 'total_case_seconds', 'totalSeconds', 'caseSeconds'], null));
-        const completed = optionalNumber(field(row, ['completedCount', 'completed_count', 'tasksCompleted', 'cases', 'Cases', 'completed'], null));
+        const totalSeconds = secondsValue(field(row, ['totalCaseSeconds', 'total_case_seconds', 'Total Case Seconds', 'total case seconds', 'totalSeconds', 'caseSeconds'], null));
+        const completed = optionalNumber(field(row, ['completedCount', 'completed_count', 'Completed Count', 'completed count', 'tasksCompleted', 'cases', 'Cases', 'completed'], null));
         if (totalSeconds !== null && completed !== null && completed > 0) result = totalSeconds / completed;
       }
       return result;
