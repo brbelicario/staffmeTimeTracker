@@ -6,7 +6,7 @@
 
   function clean(value) {
     return String(value === undefined || value === null ? "" : value)
-      .replace(/\\s+/g, " ")
+      .replace(/\s+/g, " ")
       .trim();
   }
 
@@ -72,7 +72,7 @@
     if (!trimmed) return [];
 
     const candidates = [trimmed];
-    const stripped = trimmed.replace(/^\\)\\]\\}',?\\s*/, "");
+    const stripped = trimmed.replace(/^\)\]\}',?\s*/, "");
     if (stripped !== trimmed) candidates.push(stripped);
 
     const bracketPositions = [stripped.indexOf("["), stripped.indexOf("{")]
