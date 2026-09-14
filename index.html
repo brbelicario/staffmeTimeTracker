@@ -382,6 +382,7 @@
           saveProfile();
         }
         state.remoteStatus = 'synced';
+        if (state.rows.length) queueRemoteSave();
       } catch (error) {
         state.remoteStatus = 'local-only';
       }
