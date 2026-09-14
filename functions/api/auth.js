@@ -7,7 +7,13 @@ function json(data, status, extraHeaders) {
 }
 
 function redirect(url, headers) {
-  const h = new Headers(headers || {});
+  const h = new Headers();
+  Object.entries(headers || {}).forEach(function(entry) {
+    const key = entry[0];
+    const value = entry[1];
+    if (Array.isArray(value)) value.forEach(function(item) { h.append(key, item); });
+    else h.set(key, value);
+  });
   h.set('Location', url);
   return new Response(null, { status: 302, headers: h });
 }
