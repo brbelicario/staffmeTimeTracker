@@ -490,7 +490,7 @@
     function parseDate(value) {
       if (!value) return null;
       const text = String(value).trim();
-      if (/^\\d{4}-\\d{2}-\\d{2}$/.test(text)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
         const parts = text.split('-').map(Number);
         return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
       }
@@ -630,7 +630,7 @@
     function parseMinutes(value) {
       if (value === undefined || value === null) return null;
       const text = String(value).trim();
-      const match = text.match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?\\s*(AM|PM)?$/i);
+      const match = text.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
       if (!match) return null;
       let hour = Number(match[1]);
       const minute = Number(match[2]);
