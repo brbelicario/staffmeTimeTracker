@@ -590,6 +590,7 @@
     function shiftDateFor(row) {
       const date = parseDate(row.date);
       if (!date) return null;
+      date.setHours(12, 0, 0, 0);
       const start = parseMinutes(state.settings.start);
       const end = parseMinutes(state.settings.end);
       const time = parseMinutes(row.time);
