@@ -694,13 +694,8 @@
         return {
           date: field(row, ['date', 'Date', 'day'], ''),
           time: field(row, ['time', 'Time', 'hour'], ''),
-          agent: field(row, ['agent', 'Agent', 'name'], ''),
           workedHours: numberValue(field(row, ['workedHours', 'Worked Hours', 'worked', 'hours', 'Work'], 0)),
-          ahtSeconds: ahtSecondsFor(row),
-          evaluations: numberValue(field(row, ['totalEvaluations', 'Total Evaluations', 'evaluations', 'total'], 0)),
-          chat: numberValue(field(row, ['chat', 'Chat'], 0)),
-          idcheck: numberValue(field(row, ['idcheck', 'idCheck', 'ID check', 'id check'], 0)),
-          stream: numberValue(field(row, ['stream', 'Stream'], 0))
+          ahtSeconds: ahtSecondsFor(row)
         };
       }).filter(function(row) {
         return row.date && row.time;
@@ -728,7 +723,7 @@
     }
 
     function rowKey(row) {
-      return [row.date, row.time, row.workedHours, row.ahtSeconds, row.evaluations, row.chat, row.idcheck, row.stream].join('|');
+      return [row.date, row.time, row.workedHours, row.ahtSeconds].join('|');
     }
 
     function dedupeRows(rows) {
