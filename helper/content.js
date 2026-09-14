@@ -26,6 +26,7 @@
   const trackerHosts = new Set([
     "htmlpreview.github.io",
     "brbelicario.github.io",
+    "staffmetimetracker.pages.dev",
     "raw.githubusercontent.com"
   ]);
 
