@@ -1,11 +1,28 @@
 (() => {
   const STORAGE_KEY = "staffmeHourlyRows";
   const LAST_SYNC_KEY = "staffmeHourlyLastSync";
-  const isStaffMePage = location.hostname === "script.google.com";
-  const isTrackerPage = location.hostname === "htmlpreview.github.io" || location.hostname === "brbelicario.github.io";
+  const STATUS_KEY = "staffmeHourlyStatus";
+
+  const referrerHost = (() => {
+    try {
+      return document.referrer ? new URL(document.referrer).hostname : "";
+    } catch (error) {
+      return "";
+    }
+  })();
+
+  const isStaffMePage = location.hostname === "script.google.com" || referrerHost === "script.google.com";
+  const isTrackerPage =
+    location.hostname === "htmlpreview.github.io" ||
+    location.hostname === "brbelicario.github.io" ||
+    location.hostname === "raw.githubusercontent.com" ||
+    referrerHost === "htmlpreview.github.io" ||
+    referrerHost === "brbelicario.github.io";
 
   function clean(value) {
-    return String(value || "").replace(/\s+/g, " ").trim();
+    return String(value === undefined || value === null ? "" : value)
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function headerKey(value) {
@@ -13,53 +30,121 @@
   }
 
   function numberValue(value) {
-    const number = Number(clean(value).replace(",", ".").replace(/[^0-9.-]/g, ""));
+    const text = clean(value).replace(",", ".").replace(/[^0-9.-]/g, "");
+    const number = Number(text);
     return Number.isFinite(number) ? number : 0;
   }
 
-  function findHourlyTable() {
-    const tables = Array.from(document.querySelectorAll("table"));
-    return tables.find((table) => {
-      const text = clean(table.innerText).toLowerCase();
-      return text.includes("worked hours") &&
-        text.includes("total evaluations") &&
-        text.includes("time");
-    }) || null;
+  function hasHourlyHeaders(element) {
+    const text = clean(element.innerText).toLowerCase();
+    return text.includes("worked hours") &&
+      text.includes("time") &&
+      (text.includes("total evaluations") || text.includes("evaluations"));
   }
 
-  function readHeaders(table) {
-    const row = table.querySelector("thead tr") || table.querySelector("tr");
-    if (!row) return [];
-    return Array.from(row.querySelectorAll("th,td")).map((cell) => headerKey(cell.innerText));
+  function cellsForRow(row) {
+    const direct = Array.from(row.children || []).filter((element) => {
+      const tag = element.tagName;
+      const role = element.getAttribute && element.getAttribute("role");
+      return tag === "TD" || tag === "TH" || role === "cell" || role === "gridcell";
+    });
+    if (direct.length) return direct;
+
+    const descendants = Array.from(row.querySelectorAll(
+      "td, th, [role='cell'], [role='gridcell']"
+    ));
+    if (descendants.length) return descendants;
+
+    return Array.from(row.children || []);
   }
 
-  function readHourlyRows() {
-    const table = findHourlyTable();
-    if (!table) return [];
+  function rowsForRoot(root) {
+    const selectors = [
+      "tbody tr",
+      "tr",
+      "[role='row']"
+    ];
+    const rows = [];
+    const seen = new Set();
 
-    const headers = readHeaders(table);
-    const rows = Array.from(table.querySelectorAll("tbody tr")).length
-      ? Array.from(table.querySelectorAll("tbody tr"))
-      : Array.from(table.querySelectorAll("tr")).slice(1);
+    selectors.forEach((selector) => {
+      Array.from(root.querySelectorAll(selector)).forEach((row) => {
+        if (!seen.has(row) && cellsForRow(row).length >= 2) {
+          seen.add(row);
+          rows.push(row);
+        }
+      });
+    });
 
-    return rows.map((row) => {
-      const cells = Array.from(row.querySelectorAll("td,th")).map((cell) => clean(cell.innerText));
-      const value = (names, fallback) => {
-        const index = names.map(headerKey).map((name) => headers.indexOf(name)).find((index) => index >= 0);
-        return index === undefined ? fallback : cells[index];
-      };
+    return rows;
+  }
 
-      return {
-        date: value(["date"], ""),
-        time: value(["time"], ""),
-        agent: value(["agent"], ""),
-        workedHours: numberValue(value(["worked hours", "worked"], 0)),
-        evaluations: numberValue(value(["total evaluations", "evaluations"], 0)),
-        chat: numberValue(value(["chat"], 0)),
-        idcheck: numberValue(value(["idcheck", "id check"], 0)),
-        stream: numberValue(value(["stream"], 0))
-      };
-    }).filter((row) => row.date && row.time);
+  function findHourlyRoot() {
+    const semanticCandidates = Array.from(document.querySelectorAll("table, [role='table']"))
+      .filter(hasHourlyHeaders);
+
+    if (semanticCandidates.length) {
+      return semanticCandidates.sort((a, b) =>
+        clean(a.innerText).length - clean(b.innerText).length
+      )[0];
+    }
+
+    const panelCandidates = Array.from(document.querySelectorAll("section, article, main, div"))
+      .filter((element) => hasHourlyHeaders(element) && rowsForRoot(element).length >= 2);
+
+    if (!panelCandidates.length) return null;
+
+    return panelCandidates.sort((a, b) =>
+      clean(a.innerText).length - clean(b.innerText).length
+    )[0];
+  }
+
+  function headerInfo(root, rows) {
+    const explicit = root.querySelector("thead tr, [role='rowheader']");
+    const possible = explicit || rows.find((row) => {
+      const values = cellsForRow(row).map((cell) => headerKey(cell.innerText));
+      return values.includes("date") && values.includes("time");
+    });
+    const headers = possible
+      ? cellsForRow(possible).map((cell) => headerKey(cell.innerText))
+      : [];
+    return { row: possible, headers };
+  }
+
+  function columnIndex(headers, names, fallback) {
+    const wanted = names.map(headerKey);
+    const match = wanted.map((name) => headers.indexOf(name)).find((index) => index >= 0);
+    return match === undefined ? fallback : match;
+  }
+
+  function readHourlyRows(root) {
+    if (!root) return [];
+
+    const rows = rowsForRoot(root);
+    const info = headerInfo(root, rows);
+    const dateIndex = columnIndex(info.headers, ["date"], 0);
+    const timeIndex = columnIndex(info.headers, ["time"], 1);
+    const agentIndex = columnIndex(info.headers, ["agent"], 2);
+    const workedIndex = columnIndex(info.headers, ["worked hours", "worked"], 3);
+    const evaluationsIndex = columnIndex(info.headers, ["total evaluations", "evaluations"], 4);
+    const chatIndex = columnIndex(info.headers, ["chat"], 5);
+    const idcheckIndex = columnIndex(info.headers, ["idcheck", "id check"], 6);
+    const streamIndex = columnIndex(info.headers, ["stream"], 7);
+
+    return rows
+      .filter((row) => row !== info.row)
+      .map((row) => cellsForRow(row).map((cell) => clean(cell.innerText)))
+      .map((cells) => ({
+        date: cells[dateIndex] || "",
+        time: cells[timeIndex] || "",
+        agent: cells[agentIndex] || "",
+        workedHours: numberValue(cells[workedIndex]),
+        evaluations: numberValue(cells[evaluationsIndex]),
+        chat: numberValue(cells[chatIndex]),
+        idcheck: numberValue(cells[idcheckIndex]),
+        stream: numberValue(cells[streamIndex])
+      }))
+      .filter((row) => row.date && row.time);
   }
 
   function rowKey(row) {
@@ -80,35 +165,46 @@
     return Array.from(map.values());
   }
 
-  async function saveRows(rows) {
-    if (!rows.length) return;
-    const current = await chrome.storage.local.get([STORAGE_KEY]);
-    const merged = dedupe((current[STORAGE_KEY] || []).concat(rows));
-    await chrome.storage.local.set({
-      [STORAGE_KEY]: merged,
-      [LAST_SYNC_KEY]: new Date().toISOString()
-    });
+  function postStatus(status) {
     window.postMessage({
       type: "STAFFME_HELPER_STATUS",
-      connected: true,
-      rowCount: merged.length
+      ...status
     }, "*");
   }
 
-  async function scanStaffMe() {
-    if (!isStaffMePage) return;
-    const rows = readHourlyRows();
-    if (rows.length) await saveRows(rows);
+  async function scanStaffMe(root) {
+    const rows = readHourlyRows(root);
+    const current = await chrome.storage.local.get([
+      STORAGE_KEY,
+      LAST_SYNC_KEY
+    ]);
+    const merged = dedupe((current[STORAGE_KEY] || []).concat(rows));
+    const now = new Date().toISOString();
+    const status = {
+      installed: true,
+      tableFound: Boolean(root),
+      parsedRows: rows.length,
+      storedRows: merged.length,
+      scannedAt: now
+    };
+
+    await chrome.storage.local.set({
+      [STORAGE_KEY]: merged,
+      [LAST_SYNC_KEY]: rows.length ? now : (current[LAST_SYNC_KEY] || null),
+      [STATUS_KEY]: status
+    });
+
+    postStatus(status);
   }
 
   if (isStaffMePage) {
     let lastText = "";
     const scan = async () => {
-      const table = findHourlyTable();
-      const text = table ? clean(table.innerText) : "";
+      const root = findHourlyRoot();
+      const text = root ? clean(root.innerText) : "";
       if (text && text !== lastText) {
         lastText = text;
-        await scanStaffMe();
+        await scanStaffMe(root);
       }
     };
 
@@ -124,14 +220,25 @@
   if (isTrackerPage) {
     window.addEventListener("message", async (event) => {
       if (event.source !== window || !event.data) return;
-      if (event.data.type === "STAFFME_REQUEST_DATA") {
-        const stored = await chrome.storage.local.get([STORAGE_KEY, LAST_SYNC_KEY]);
-        window.postMessage({
-          type: "STAFFME_HOURLY_DATA",
-          rows: stored[STORAGE_KEY] || [],
-          lastSync: stored[LAST_SYNC_KEY] || null
-        }, "*");
-      }
+      if (event.data.type !== "STAFFME_REQUEST_DATA") return;
+
+      const stored = await chrome.storage.local.get([
+        STORAGE_KEY,
+        LAST_SYNC_KEY,
+        STATUS_KEY
+      ]);
+
+      window.postMessage({
+        type: "STAFFME_HOURLY_DATA",
+        rows: stored[STORAGE_KEY] || [],
+        lastSync: stored[LAST_SYNC_KEY] || null,
+        helperStatus: stored[STATUS_KEY] || {
+          installed: true,
+          tableFound: false,
+          parsedRows: 0,
+          storedRows: (stored[STORAGE_KEY] || []).length
+        }
+      }, "*");
     });
 
     window.setTimeout(() => {
