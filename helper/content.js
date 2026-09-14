@@ -11,13 +11,37 @@
     }
   })();
 
-  const isStaffMePage = location.hostname === "script.google.com" || referrerHost === "script.google.com";
+  const ancestorHosts = (() => {
+    const hosts = [];
+    try {
+      Array.from(location.ancestorOrigins || []).forEach((origin) => {
+        hosts.push(new URL(origin).hostname);
+      });
+    } catch (error) {
+      // Some frame types do not expose ancestor origins.
+    }
+    return hosts;
+  })();
+
+  const trackerHosts = new Set([
+    "htmlpreview.github.io",
+    "brbelicario.github.io",
+    "raw.githubusercontent.com"
+  ]);
+
+  const staffMeHosts = new Set(["script.google.com"]);
+  const hasAncestorHost = (hosts) => hosts.some((host) => trackerHosts.has(host));
+  const hasAncestorStaffMeHost = (hosts) => hosts.some((host) => staffMeHosts.has(host));
+
+  const isStaffMePage =
+    staffMeHosts.has(location.hostname) ||
+    staffMeHosts.has(referrerHost) ||
+    hasAncestorStaffMeHost(ancestorHosts);
+
   const isTrackerPage =
-    location.hostname === "htmlpreview.github.io" ||
-    location.hostname === "brbelicario.github.io" ||
-    location.hostname === "raw.githubusercontent.com" ||
-    referrerHost === "htmlpreview.github.io" ||
-    referrerHost === "brbelicario.github.io";
+    trackerHosts.has(location.hostname) ||
+    trackerHosts.has(referrerHost) ||
+    hasAncestorHost(ancestorHosts);
 
   function clean(value) {
     return String(value === undefined || value === null ? "" : value)
