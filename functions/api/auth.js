@@ -100,7 +100,7 @@ function publicUser(row) {
     name: row.name || '',
     picture: row.picture || '',
     username: row.username || '',
-    authProvider: row.auth_provider || (String(row.id || '').indexOf('google:') === 0 ? 'google' : 'email'),
+    authProvider: row.auth_provider === 'google' || String(row.id || '').indexOf('google:') === 0 ? 'google' : 'email',
     hasPassword: Boolean(row.password_hash && row.password_salt)
   };
 }
@@ -118,6 +118,7 @@ async function ensureTables(db) {
   try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN manual_entries_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
   try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN reported_weeks_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
   try { await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS users_username_unique ON users(username) WHERE username IS NOT NULL AND username <> ''").run(); } catch (error) {}
+  try { await db.prepare("UPDATE users SET auth_provider = 'google' WHERE id LIKE 'google:%' AND (auth_provider IS NULL OR auth_provider = 'email')").run(); } catch (error) {}
 }
 
 async function currentUser(request, db) {
@@ -222,7 +223,7 @@ async function accountSettings(request, db) {
   const currentUsername = normalizeUsername(current.username);
   const hasUsernameField = body && Object.prototype.hasOwnProperty.call(body, 'username');
   const requestedUsername = hasUsernameField ? normalizeUsername(body.username) : currentUsername;
-  const provider = current.auth_provider || (String(current.id || '').indexOf('google:') === 0 ? 'google' : 'email');
+  const provider = current.auth_provider === 'google' || String(current.id || '').indexOf('google:') === 0 ? 'google' : 'email';
   const currentPassword = String(body && body.currentPassword || '');
   const newPassword = String(body && body.newPassword || '');
   const newPasswordConfirm = String(body && body.newPasswordConfirm || '');
