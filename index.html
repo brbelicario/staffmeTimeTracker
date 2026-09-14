@@ -455,7 +455,7 @@
         <div class="panel-head">
           <div><div class="week-label">Agreement daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the agreement term.</p></div>
         </div>
-        <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend adherence</th><th>Manual / Other Task</th></tr></thead><tbody id="dayRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Total work hours</th><th>In coverage</th><th>Outside duty</th><th>Weekend adherence</th><th>Manual / Other Task</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
@@ -818,20 +818,17 @@
           const key = isoDate(date);
           const group = inTerm ? groupsByDate.get(key) : null;
           const actual = group && group.total > 0
-            ? '<span class="calendar-hours">' + hours(group.total) + 'h worked</span>'
-            : '';
-          const manual = group && group.manual > 0
-            ? '<span class="calendar-manual" title="' + escapeHtml(manualGroupBreakdown(group)) + '">+' + hours(group.manual) + 'h manual</span>'
+            ? '<span class="calendar-hours">' + hours(group.total) + 'h total work</span>'
             : '';
           const label = category === 'adherence' ? 'Adherence' : category === 'coverage' ? 'Coverage' : 'Outside term';
-          cells.push('<div class="calendar-day ' + category + '"><span class="calendar-number">' + day + '</span><span class="calendar-label">' + label + '</span>' + actual + manual + '</div>');
+          cells.push('<div class="calendar-day ' + category + '"><span class="calendar-number">' + day + '</span><span class="calendar-label">' + label + '</span>' + actual + '</div>');
         }
 
         monthBlocks.push('<div class="calendar-month"><h3>' + first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + '</h3><div class="calendar-grid">' + cells.join('') + '</div></div>');
         cursor.setMonth(cursor.getMonth() + 1);
       }
 
-      root.innerHTML = '<div class="calendar-legend"><span class="legend-adherence">Adherence day</span><span class="legend-coverage">Coverage day</span><span class="legend-outside">Outside agreement</span><span class="legend-manual">Manual / Other Task</span></div>' + monthBlocks.join('');
+      root.innerHTML = '<div class="calendar-legend"><span class="legend-adherence">Adherence day</span><span class="legend-coverage">Coverage day</span><span class="legend-outside">Outside agreement</span></div>' + monthBlocks.join('');
     }
 
     function isoDate(date) {
@@ -1625,11 +1622,12 @@
         const classification = group.adherence > 0 ? 'adherence' : group.coverage > 0 ? 'coverage' : 'outside';
         const tagClass = classification === 'adherence' ? 'tag-adherence' : classification === 'coverage' ? 'tag-coverage' : 'tag-neutral';
         const tagLabel = classification === 'adherence' ? 'Adherence' : classification === 'coverage' ? 'Coverage' : 'Outside duty';
+        const outside = Math.max(0, Number(group.total || 0) - Number(group.coverage || 0));
         const manual = group.manual > 0
           ? '<span class="tag tag-neutral">' + hours(group.manual) + 'h</span><span class="breakdown-detail">' + manualGroupBreakdown(group) + '</span>'
           : '<span class="muted">—</span>';
-        return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + tagClass + '">' + tagLabel + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(group.adherence) + 'h</td><td>' + manual + '</td></tr>';
-      }).join('') : '<tr><td colspan="6"><div class="empty">No rows found for the selected week.</div></td></tr>';
+        return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + tagClass + '">' + tagLabel + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(outside) + 'h</td><td>' + hours(group.adherence) + 'h</td><td>' + manual + '</td></tr>';
+      }).join('') : '<tr><td colspan="7"><div class="empty">No rows found for the selected week.</div></td></tr>';
 
       const preview = state.rows.slice().sort(function(a, b) {
         return rowTimestamp(b) - rowTimestamp(a) || rowKey(b).localeCompare(rowKey(a));
