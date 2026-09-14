@@ -6,6 +6,8 @@ This repository contains the work-hours tracker prototype.
 
 The current test build is on the public-test branch:
 
+The Cloudflare Pages public test deployment follows this branch.
+
 [Open the public test dashboard](https://htmlpreview.github.io/?https://github.com/brbelicario/staffmeTimeTracker/blob/public-test/index.html)
 
 The dashboard includes:
