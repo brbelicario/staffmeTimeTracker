@@ -198,6 +198,7 @@
     .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
     .toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; padding: 13px 16px; color: white; background: var(--navy); border-radius: 12px; box-shadow: var(--shadow); font-size: .84rem; }
 
+    .row-badges { display: flex; flex-wrap: wrap; gap: 5px; min-width: 170px; }
     .auth-tabs { display: flex; gap: 7px; padding: 5px; margin: 24px 0 18px; border-radius: 13px; background: #f1f4f8; }
     .auth-tab { flex: 1; border: 0; border-radius: 9px; padding: 10px 12px; color: var(--muted); background: transparent; font-weight: 850; }
     .auth-tab.active { color: white; background: var(--navy); box-shadow: 0 5px 12px rgba(24,41,68,.16); }
@@ -359,7 +360,7 @@
           <div><div class="week-label">StaffMe source rows</div><h2>Hourly data preview</h2><p>Only hourly rows captured from StaffMe appear here.</p></div>
           <span class="tag tag-neutral" id="rowCount"></span>
         </div>
-        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Worked</th><th>Evaluations</th><th>Chat</th><th>ID check</th><th>Stream</th></tr></thead><tbody id="hourRows"></tbody></table></div>
+        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Avg Seconds per Task</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
       </section>
     </section>
   </main>
@@ -653,13 +654,49 @@
       return fallback;
     }
 
+
+    function optionalNumber(value) {
+      if (value === undefined || value === null || value === '') return null;
+      const parsed = Number(String(value).replace(',', '.').replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function secondsValue(value) {
+      if (value === undefined || value === null || value === '') return null;
+      if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+      const text = String(value).trim().toLowerCase();
+      const clock = text.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+      if (clock) {
+        const first = Number(clock[1]);
+        const second = Number(clock[2]);
+        const third = clock[3] === undefined ? null : Number(clock[3]);
+        return third === null ? first * 60 + second : first * 3600 + second * 60 + third;
+      }
+      const minutes = text.match(/(\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?/);
+      const seconds = text.match(/(\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?/);
+      if (minutes || seconds) return (minutes ? Number(minutes[1]) * 60 : 0) + (seconds ? Number(seconds[1]) : 0);
+      return optionalNumber(value);
+    }
+
+    function ahtSecondsFor(row) {
+      const direct = field(row, ['ahtSeconds', 'avgSecondsPerTask', 'avg_seconds_per_task', 'Avg Seconds per Task', 'aht', 'AHT'], null);
+      let result = secondsValue(direct);
+      if (result === null) {
+        const totalSeconds = secondsValue(field(row, ['totalCaseSeconds', 'total_case_seconds', 'totalSeconds', 'caseSeconds'], null));
+        const completed = optionalNumber(field(row, ['completedCount', 'completed_count', 'tasksCompleted', 'cases', 'Cases', 'completed'], null));
+        if (totalSeconds !== null && completed !== null && completed > 0) result = totalSeconds / completed;
+      }
+      return result;
+    }
+
     function normalizeRows(rows) {
       return (Array.isArray(rows) ? rows : []).map(function(row) {
         return {
           date: field(row, ['date', 'Date', 'day'], ''),
           time: field(row, ['time', 'Time', 'hour'], ''),
           agent: field(row, ['agent', 'Agent', 'name'], ''),
-          workedHours: numberValue(field(row, ['workedHours', 'Worked Hours', 'worked', 'hours'], 0)),
+          workedHours: numberValue(field(row, ['workedHours', 'Worked Hours', 'worked', 'hours', 'Work'], 0)),
+          ahtSeconds: ahtSecondsFor(row),
           evaluations: numberValue(field(row, ['totalEvaluations', 'Total Evaluations', 'evaluations', 'total'], 0)),
           chat: numberValue(field(row, ['chat', 'Chat'], 0)),
           idcheck: numberValue(field(row, ['idcheck', 'idCheck', 'ID check', 'id check'], 0)),
@@ -691,7 +728,7 @@
     }
 
     function rowKey(row) {
-      return [row.date, row.time, row.workedHours, row.evaluations, row.chat, row.idcheck, row.stream].join('|');
+      return [row.date, row.time, row.workedHours, row.ahtSeconds, row.evaluations, row.chat, row.idcheck, row.stream].join('|');
     }
 
     function dedupeRows(rows) {
@@ -934,8 +971,17 @@
       });
       document.getElementById('rowCount').textContent = state.rows.length + ' rows';
       document.getElementById('hourRows').innerHTML = preview.length ? preview.map(function(row) {
-        return '<tr><td>' + formatDate(row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + '</td><td>' + row.evaluations + '</td><td>' + row.chat + '</td><td>' + row.idcheck + '</td><td>' + row.stream + '</td></tr>';
-      }).join('') : '<tr><td colspan="7"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
+        const shiftDate = shiftDateFor(row);
+        const inDuty = withinDutyWindow(row);
+        const adherence = Boolean(shiftDate && categoryFor(shiftDate) === 'adherence');
+        const badges = !inDuty
+          ? '<span class="tag tag-neutral">Outside duty</span>'
+          : (adherence ? '<span class="tag tag-adherence">Weekend adherence</span>' : '') +
+            '<span class="tag tag-coverage">InCoverage</span>';
+        const aht = ahtSecondsFor(row);
+        const ahtLabel = aht === null ? '—' : Math.round(aht) + 's';
+        return '<tr><td>' + formatDate(row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td>' + ahtLabel + '</td><td><div class="row-badges">' + badges + '</div></td></tr>';
+      }).join('') : '<tr><td colspan="5"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
     }
 
     function showToast(message) {
