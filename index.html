@@ -302,7 +302,7 @@
         <div class="panel-head">
           <div><div class="week-label">Agreement daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the agreement term.</p></div>
         </div>
-        <div class="table-scroll"><table class="day-table"><thead><tr><th>Shift date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend</th></tr></thead><tbody id="dayRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table"><thead><tr><th>Shift date</th><th>Classification</th><th>Worked hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
@@ -416,12 +416,11 @@
         const group = groups.get(key);
         group.total += value;
         if (withinDutyWindow(row)) {
+          coverage += value;
+          group.coverage += value;
           if (categoryFor(date) === 'adherence') {
             adherence += value;
             group.adherence += value;
-          } else {
-            coverage += value;
-            group.coverage += value;
           }
         }
       });
@@ -446,8 +445,8 @@
           const value = row.workedHours;
           week.work += value;
           if (withinDutyWindow(row)) {
+            week.coverage += value;
             if (categoryFor(date) === 'adherence') week.adherence += value;
-            else week.coverage += value;
           }
         });
         weeks.push(week);
@@ -653,12 +652,11 @@
         const group = groups.get(key);
         group.total += value;
         if (withinDutyWindow(row)) {
+          coverage += value;
+          group.coverage += value;
           if (categoryFor(date) === 'adherence') {
             weekend += value;
             group.weekend += value;
-          } else {
-            coverage += value;
-            group.coverage += value;
           }
         }
       });
@@ -677,6 +675,14 @@
 
     function dayName(day) {
       return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][day];
+    }
+
+    function rowTimestamp(row) {
+      const date = parseDate(row.date);
+      const minutes = parseMinutes(row.time);
+      if (!date || minutes === null) return 0;
+      date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+      return date.getTime();
     }
 
     function render() {
@@ -721,8 +727,8 @@
 
       const cards = [
         { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'All StaffMe hourly rows' },
-        { name: 'InCoverage Hours', value: summary.coverage, target: state.settings.targets.coverage, className: 'orange', note: 'Non-adherence duty hours' },
-        { name: 'Weekend Hours', value: summary.weekend, target: state.settings.targets.weekend, className: 'green', note: 'Selected adherence days' }
+        { name: 'InCoverage Hours', value: summary.coverage, target: state.settings.targets.coverage, className: 'orange', note: 'All duty hours, including adherence' },
+        { name: 'Weekend adherence hours', value: summary.weekend, target: state.settings.targets.weekend, className: 'green', note: 'Selected adherence days' }
       ];
       document.getElementById('metricGrid').innerHTML = cards.map(function(card) {
         return '<article class="metric-card ' + card.className + '">' +
@@ -736,7 +742,7 @@
       document.getElementById('weekSummary').innerHTML = [
         ['Total', summary.work, 'Worked hours'],
         ['Coverage', summary.coverage, 'InCoverage'],
-        ['Adherence', summary.weekend, 'Weekend hours']
+        ['Adherence', summary.weekend, 'Weekend adherence']
       ].map(function(item) {
         return '<div class="week-chip"><b>' + hours(item[1]) + 'h</b><span>' + item[2] + '</span></div>';
       }).join('');
@@ -744,7 +750,7 @@
       const targetItems = [
         ['Work Hours', summary.work, state.settings.targets.work, ''],
         ['InCoverage Hours', summary.coverage, state.settings.targets.coverage, 'orange'],
-        ['Weekend Hours', summary.weekend, state.settings.targets.weekend, 'green']
+        ['Weekend adherence hours', summary.weekend, state.settings.targets.weekend, 'green']
       ];
       document.getElementById('metricBars').innerHTML = targetItems.map(function(item) {
         return '<div class="bar-row"><div class="bar-label"><span>' + item[0] + '</span><span>' + hours(item[1]) + ' / ' + hours(item[2]) + ' hours</span></div><div class="progress"><span style="width:' + percent(item[1], item[2]) + '%;background:' + (item[3] === 'orange' ? 'var(--orange)' : item[3] === 'green' ? 'var(--green)' : 'var(--cyan)') + '"></span></div></div>';
@@ -782,9 +788,7 @@
       }).join('') : '<tr><td colspan="5"><div class="empty">No rows found for the selected week.</div></td></tr>';
 
       const preview = state.rows.slice().sort(function(a, b) {
-        const da = parseDate(a.date) || new Date(0);
-        const db = parseDate(b.date) || new Date(0);
-        return db - da || String(b.time).localeCompare(String(a.time));
+        return rowTimestamp(b) - rowTimestamp(a) || rowKey(b).localeCompare(rowKey(a));
       });
       document.getElementById('rowCount').textContent = state.rows.length + ' rows';
       document.getElementById('hourRows').innerHTML = preview.length ? preview.map(function(row) {
@@ -815,7 +819,7 @@
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
             }).join('') + '</div><div class="field-help">A shift is classified by its starting day. All other days become coverage days automatically.</div></div>' +
             '<div class="field-grid"><div class="field"><label for="workTarget">Work Hours target</label><input id="workTarget" type="number" min="0" step=".01" value="' + state.settings.targets.work + '"></div><div class="field"><label for="coverageTarget">InCoverage target</label><input id="coverageTarget" type="number" min="0" step=".01" value="' + state.settings.targets.coverage + '"></div></div>' +
-            '<div class="field"><label for="weekendTarget">Weekend Hours target</label><input id="weekendTarget" type="number" min="0" step=".01" value="' + state.settings.targets.weekend + '"></div>' +
+            '<div class="field"><label for="weekendTarget">Weekend adherence target</label><input id="weekendTarget" type="number" min="0" step=".01" value="' + state.settings.targets.weekend + '"></div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
           '</form>' +
         '</div></div>';
