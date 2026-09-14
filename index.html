@@ -57,6 +57,38 @@
     }
     .brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
     .top-actions { display: flex; gap: 9px; align-items: center; }
+    .profile-menu { position: relative; }
+    .profile-trigger {
+      display: flex; align-items: center; gap: 9px;
+      border: 1px solid var(--line); border-radius: 13px;
+      background: #fff; color: var(--ink); padding: 7px 10px;
+      min-width: 176px; text-align: left;
+    }
+    .profile-trigger:hover { border-color: var(--cyan); }
+    .profile-avatar {
+      width: 29px; height: 29px; border-radius: 50%;
+      display: grid; place-items: center; flex: 0 0 auto;
+      color: #fff; background: linear-gradient(145deg, var(--cyan), var(--navy));
+      font-size: .78rem; font-weight: 900;
+    }
+    .profile-trigger-copy { display: grid; gap: 1px; min-width: 0; flex: 1; }
+    .profile-trigger-copy strong { font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .profile-trigger-copy small { color: var(--muted); font-size: .68rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+    .profile-chevron { color: var(--muted); font-size: 1rem; line-height: 1; }
+    .profile-dropdown {
+      position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
+      width: 246px; padding: 9px; border: 1px solid var(--line);
+      border-radius: 16px; background: #fff; box-shadow: var(--shadow);
+    }
+    .profile-dropdown-head { display: grid; gap: 3px; padding: 10px 11px 12px; border-bottom: 1px solid #edf0f4; }
+    .profile-dropdown-head strong { font-size: .86rem; }
+    .profile-dropdown-head span { color: var(--muted); font-size: .74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .profile-dropdown-item {
+      width: 100%; border: 0; background: transparent; color: var(--ink);
+      border-radius: 10px; padding: 10px 11px; text-align: left; font-weight: 800; font-size: .8rem;
+    }
+    .profile-dropdown-item:hover { background: #f3f6f9; }
+    .profile-dropdown-item.danger { color: var(--red); }
     .shell { width: min(1220px, 92vw); margin: 0 auto; padding: 42px 0 64px; }
     .login-shell { min-height: calc(100vh - 150px); display: grid; place-items: center; }
     .login-card {
@@ -240,6 +272,8 @@
       .day-grid { grid-template-columns: repeat(3, 1fr); }
       .sync-banner { align-items: flex-start; flex-direction: column; }
       .field-grid { grid-template-columns: 1fr; }
+      .profile-trigger { min-width: 0; padding: 7px; }
+      .profile-trigger-copy { display: none; }
     }
   </style>
 </head>
@@ -250,7 +284,18 @@
       <div>StaffMe Time Tracker<small>Hourly work dashboard</small></div>
     </div>
     <div class="top-actions" id="topActions" hidden>
-      <button class="btn btn-quiet" id="logoutBtn">Sign out</button>
+      <div class="profile-menu" id="profileMenu">
+        <button class="profile-trigger" id="profileBtn" type="button" aria-expanded="false">
+          <span class="profile-avatar" id="profileAvatar">A</span>
+          <span class="profile-trigger-copy"><strong id="profileMenuName">Account</strong><small id="profileMenuEmail"></small></span>
+          <span class="profile-chevron">⌄</span>
+        </button>
+        <div class="profile-dropdown" id="profileDropdown" hidden>
+          <div class="profile-dropdown-head"><strong id="profileDropdownName">Account</strong><span id="profileDropdownEmail"></span></div>
+          <button class="profile-dropdown-item" id="accountSettingsBtn" type="button">Account settings</button>
+          <button class="profile-dropdown-item danger" id="logoutBtn" type="button">Sign out</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -268,8 +313,8 @@
 
         <form id="loginForm" class="auth-form">
           <div class="field">
-            <label for="loginEmail">Email</label>
-            <input id="loginEmail" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+            <label for="loginEmail">Email or username</label>
+            <input id="loginEmail" name="email" type="text" autocomplete="username" placeholder="you@example.com or username" required>
           </div>
           <div class="field">
             <label for="loginPassword">Password</label>
@@ -282,6 +327,11 @@
           <div class="field">
             <label for="registerName">Name</label>
             <input id="registerName" name="name" type="text" autocomplete="name" placeholder="Your name" required>
+          </div>
+          <div class="field">
+            <label for="registerUsername">Username</label>
+            <input id="registerUsername" name="username" type="text" autocomplete="username" placeholder="Choose a username" minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]{3,32}" required>
+            <div class="field-help">3–32 characters: letters, numbers, dot, underscore, or hyphen. This cannot be changed later.</div>
           </div>
           <div class="field">
             <label for="registerEmail">Email</label>
@@ -302,7 +352,7 @@
 
         <div class="auth-divider"><span>optional</span></div>
         <button class="btn btn-cyan" id="googleLoginBtn" type="button">Continue with Google</button>
-        <div class="note auth-note"><span>●</span><div><strong>Your account controls access.</strong> Your schedule and StaffMe hourly rows are stored under your account so you can log in from another device. Google sign-in remains optional and uses the same account email when configured.</div></div>
+        <div class="note auth-note"><span>●</span><div><strong>Your account controls access.</strong> Your schedule and StaffMe hourly rows are stored under your account so you can log in from another device. Google users can add a username and password later from Account settings.</div></div>
       </div>
     </section>
     <section id="dashboardView" hidden>
@@ -432,6 +482,7 @@
       lastSync: null,
       helperStatus: null,
       remoteStatus: 'unknown',
+      remoteReady: false,
       user: null
     };
 
@@ -464,6 +515,7 @@
 
     async function pullRemoteProfile() {
       if (!state.email) return;
+      state.remoteReady = false;
       state.remoteStatus = 'loading';
       render();
       try {
@@ -479,18 +531,20 @@
             state.lastSync = remote.lastSync;
           }
           if (state.rows.length && state.source === 'waiting') state.source = 'remote';
-          saveProfile();
         }
+        state.remoteReady = true;
         state.remoteStatus = 'synced';
+        saveProfile();
         if (state.rows.length || state.manualEntries.length || state.reportedWeeks.length) queueRemoteSave();
       } catch (error) {
+        state.remoteReady = false;
         state.remoteStatus = 'local-only';
       }
       render();
     }
 
     async function pushRemoteProfile() {
-      if (!state.email) return;
+      if (!state.email || !state.remoteReady) return;
       try {
         const response = await fetch('/api/sync', {
           method: 'POST',
@@ -513,7 +567,7 @@
     }
 
     function queueRemoteSave() {
-      if (!state.email) return;
+      if (!state.email || !state.remoteReady) return;
       window.clearTimeout(remoteSaveTimer);
       remoteSaveTimer = window.setTimeout(pushRemoteProfile, 250);
     }
@@ -1218,7 +1272,18 @@
       document.getElementById('loginView').hidden = loggedIn;
       document.getElementById('dashboardView').hidden = !loggedIn;
       document.getElementById('topActions').hidden = !loggedIn;
+      document.getElementById('profileDropdown').hidden = true;
+      document.getElementById('profileBtn').setAttribute('aria-expanded', 'false');
       if (!loggedIn) return;
+
+      const displayName = state.user && (state.user.username || state.user.name)
+        ? (state.user.username || state.user.name)
+        : (state.email ? state.email.split('@')[0] : 'Account');
+      document.getElementById('profileAvatar').textContent = displayName.slice(0, 1).toUpperCase();
+      document.getElementById('profileMenuName').textContent = displayName;
+      document.getElementById('profileMenuEmail').textContent = state.email;
+      document.getElementById('profileDropdownName').textContent = displayName;
+      document.getElementById('profileDropdownEmail').textContent = state.email;
 
       const summary = aggregate();
       const range = contractRange();
@@ -1370,6 +1435,103 @@
       document.getElementById('modalRoot').innerHTML = '';
     }
 
+    function openAccountSettings() {
+      const user = state.user || {};
+      const googleAccount = user.authProvider === 'google';
+      const username = String(user.username || '');
+      const hasPassword = Boolean(user.hasPassword);
+      document.getElementById('modalRoot').innerHTML =
+        '<div class="modal-backdrop" id="accountModalBackdrop"><div class="modal">' +
+          '<div class="modal-head"><div><div class="eyebrow">Profile</div><h2>Account settings</h2><p class="muted">Manage the login details for this account.</p></div><button class="close" id="closeAccountModal" type="button">×</button></div>' +
+          '<form id="accountForm">' +
+            '<div class="field"><label for="accountEmail">Email</label><input id="accountEmail" type="email" value="' + escapeHtml(state.email) + '"' + (googleAccount ? ' disabled' : '') + ' required><div class="field-help">' + (googleAccount ? 'This email is managed by Google and cannot be changed here.' : 'You can change this email after confirming your current password.') + '</div></div>' +
+            '<div class="field"><label for="accountUsername">Username</label><input id="accountUsername" type="text" value="' + escapeHtml(username) + '" minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]{3,32}"' + (username ? ' disabled' : '') + '><div class="field-help">' + (username ? 'Username is locked after it is set.' : 'Choose a username once. Google accounts must set a username and password together.') + '</div></div>' +
+            '<div class="field"><label for="accountCurrentPassword">Current password</label><input id="accountCurrentPassword" type="password" autocomplete="current-password" placeholder="' + (hasPassword ? 'Required for credential changes' : 'Not required for your first Google password') + '"></div>' +
+            '<div class="field-grid"><div class="field"><label for="accountNewPassword">New password</label><input id="accountNewPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Leave blank to keep it"></div><div class="field"><label for="accountNewPasswordConfirm">Confirm new password</label><input id="accountNewPasswordConfirm" type="password" autocomplete="new-password" minlength="8" placeholder="Re-enter new password"></div></div>' +
+            '<div id="accountError" class="auth-error" hidden></div>' +
+            '<div class="modal-actions"><button class="btn" id="cancelAccountBtn" type="button">Cancel</button><button class="btn btn-primary" id="saveAccountBtn" type="submit">Save account settings</button></div>' +
+          '</form>' +
+        '</div></div>';
+      document.getElementById('closeAccountModal').addEventListener('click', closeModal);
+      document.getElementById('cancelAccountBtn').addEventListener('click', closeModal);
+      document.getElementById('accountForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const errorRoot = document.getElementById('accountError');
+        const saveButton = document.getElementById('saveAccountBtn');
+        const email = document.getElementById('accountEmail').value.trim().toLowerCase();
+        const newUsername = document.getElementById('accountUsername').value.trim().toLowerCase();
+        const currentPassword = document.getElementById('accountCurrentPassword').value;
+        const newPassword = document.getElementById('accountNewPassword').value;
+        const newPasswordConfirm = document.getElementById('accountNewPasswordConfirm').value;
+        const emailChanged = email !== state.email.toLowerCase();
+        const usernameMissingForGoogle = googleAccount && !username && (newUsername || newPassword) && (!newUsername || !newPassword);
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+          errorRoot.textContent = 'Enter a valid email address.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (usernameMissingForGoogle) {
+          errorRoot.textContent = 'Set a username and a password together to enable username/password login.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (newPassword && newPassword.length < 8) {
+          errorRoot.textContent = 'Password must be at least 8 characters.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (newPassword !== newPasswordConfirm) {
+          errorRoot.textContent = 'New passwords do not match.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (hasPassword && (emailChanged || (!username && newUsername) || newPassword) && !currentPassword) {
+          errorRoot.textContent = 'Enter your current password to change account credentials.';
+          errorRoot.hidden = false;
+          return;
+        }
+        errorRoot.hidden = true;
+        saveButton.disabled = true;
+        saveButton.textContent = 'Saving...';
+        try {
+          const response = await fetch('/api/auth?mode=account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: email,
+              username: newUsername,
+              currentPassword: currentPassword,
+              newPassword: newPassword,
+              newPasswordConfirm: newPasswordConfirm
+            })
+          });
+          const result = await response.json().catch(function() { return {}; });
+          if (!response.ok || !result.ok) throw new Error(result.error || 'Could not save account settings.');
+          const oldEmail = state.email;
+          const nextEmail = String(result.user.email || '').toLowerCase();
+          if (oldEmail !== nextEmail) {
+            const oldKey = profileKey(oldEmail);
+            const nextKey = profileKey(nextEmail);
+            const oldProfile = localStorage.getItem(oldKey);
+            if (oldProfile) localStorage.setItem(nextKey, oldProfile);
+            localStorage.removeItem(oldKey);
+          }
+          state.user = result.user;
+          state.email = nextEmail;
+          saveProfile();
+          closeModal();
+          render();
+          showToast('Account settings saved.');
+        } catch (error) {
+          errorRoot.textContent = error.message || 'Could not save account settings.';
+          errorRoot.hidden = false;
+        } finally {
+          saveButton.disabled = false;
+          saveButton.textContent = 'Save account settings';
+        }
+      });
+    }
+
     function openSettings() {
       const days = [0,1,2,3,4,5,6];
       document.getElementById('modalRoot').innerHTML =
@@ -1450,6 +1612,7 @@
         state.helperStatus = null;
         saveProfile();
       }
+      state.remoteReady = false;
       state.remoteStatus = 'loading';
       render();
       window.setTimeout(function() {
@@ -1508,11 +1671,31 @@
       window.location.href = '/api/auth?mode=start';
     });
 
+    document.getElementById('profileBtn').addEventListener('click', function(event) {
+      event.stopPropagation();
+      const dropdown = document.getElementById('profileDropdown');
+      dropdown.hidden = !dropdown.hidden;
+      this.setAttribute('aria-expanded', String(!dropdown.hidden));
+    });
+    document.addEventListener('click', function(event) {
+      const menu = document.getElementById('profileMenu');
+      if (menu && !menu.contains(event.target)) {
+        document.getElementById('profileDropdown').hidden = true;
+        document.getElementById('profileBtn').setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.getElementById('accountSettingsBtn').addEventListener('click', function() {
+      document.getElementById('profileDropdown').hidden = true;
+      document.getElementById('profileBtn').setAttribute('aria-expanded', 'false');
+      openAccountSettings();
+    });
+
     document.getElementById('logoutBtn').addEventListener('click', function() {
       fetch('/api/auth?mode=logout', { cache: 'no-store' }).catch(function() {});
       state.email = '';
       state.user = null;
       state.helperStatus = null;
+      state.remoteReady = false;
       state.remoteStatus = 'unknown';
       closeModal();
       render();
