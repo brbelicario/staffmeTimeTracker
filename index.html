@@ -290,7 +290,8 @@
       settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
       rows: [],
       source: 'waiting',
-      lastSync: null
+      lastSync: null,
+      helperStatus: null
     };
 
     function profileKey(email) {
@@ -321,6 +322,7 @@
         state.rows = isDemoProfile ? [] : savedRows;
         state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
         state.lastSync = saved.lastSync || null;
+        state.helperStatus = null;
         if (isDemoProfile) saveProfile();
         return true;
       } catch (error) {
@@ -530,16 +532,26 @@
       document.getElementById('weekRange').textContent = formatDate(summary.start) + ' – ' + formatDate(end);
       document.getElementById('weekTitle').textContent = 'Week of ' + formatDate(summary.start);
       const hasRows = state.rows.length > 0;
-      const sourceLabel = state.source === 'helper' ? 'STAFFME DATA' : (hasRows ? 'STORED STAFFME' : 'WAITING');
+      const tableFound = Boolean(state.helperStatus && state.helperStatus.tableFound);
+      const parsedRows = state.helperStatus ? Number(state.helperStatus.parsedRows || 0) : 0;
+      const sourceLabel = state.source === 'helper'
+        ? 'STAFFME DATA'
+        : (hasRows ? 'STORED STAFFME' : (state.helperStatus ? 'HELPER READY' : 'WAITING'));
       document.getElementById('syncTitle').textContent = hasRows
         ? 'StaffMe hourly data is loaded'
-        : 'Waiting for StaffMe hourly data';
+        : (tableFound && parsedRows === 0
+          ? 'StaffMe table detected, but no rows were parsed'
+          : 'Waiting for StaffMe hourly data');
       document.getElementById('syncStatus').textContent = sourceLabel;
       document.getElementById('syncDetail').textContent = hasRows
         ? (state.lastSync
           ? state.rows.length + ' hourly rows received from StaffMe. Last sync ' + new Date(state.lastSync).toLocaleString() + '.'
           : state.rows.length + ' hourly rows are stored in this browser.')
-        : 'Keep the StaffMe Hourly AHT table open, then click Refresh StaffMe data. No demo rows are used.';
+        : (tableFound && parsedRows === 0
+          ? 'The helper is running, but the table structure needs adjustment. Click Refresh StaffMe data after reloading the helper.'
+          : state.helperStatus
+            ? 'The helper responded, but no StaffMe table was detected yet. Keep the Hourly AHT table open, then refresh.'
+            : 'The helper has not responded. Reload the extension, keep StaffMe open, then click Refresh StaffMe data.');
 
       const cards = [
         { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'All StaffMe hourly rows' },
@@ -651,6 +663,7 @@
         state.rows = [];
         state.source = 'waiting';
         state.lastSync = null;
+        state.helperStatus = null;
         saveProfile();
       }
       render();
@@ -659,6 +672,7 @@
 
     document.getElementById('logoutBtn').addEventListener('click', function() {
       state.email = '';
+      state.helperStatus = null;
       closeModal();
       render();
     });
@@ -675,12 +689,24 @@
     });
 
     window.addEventListener('message', function(event) {
-      if (!state.email || !event.data || event.data.type !== 'STAFFME_HOURLY_DATA') return;
+      if (!state.email || !event.data) return;
+
+      if (event.data.type === 'STAFFME_HELPER_STATUS') {
+        state.helperStatus = event.data;
+        render();
+        return;
+      }
+
+      if (event.data.type !== 'STAFFME_HOURLY_DATA') return;
+
       try {
+        state.helperStatus = event.data.helperStatus || state.helperStatus;
         const imported = normalizeRows(event.data.rows || []);
         if (!imported.length) {
           render();
-          showToast('No StaffMe hourly rows are available yet. Keep the Hourly AHT table open and try again.');
+          showToast(state.helperStatus && state.helperStatus.tableFound
+            ? 'The helper found StaffMe but parsed no rows.'
+            : 'No StaffMe hourly rows are available yet.');
           return;
         }
         state.rows = dedupeRows(state.rows.concat(imported));
