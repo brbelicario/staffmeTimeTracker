@@ -83,32 +83,48 @@ function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function usernameError(username) {
+  if (!username) return 'Choose a username.';
+  if (!/^[a-z0-9._-]{3,32}$/.test(username)) return 'Username must be 3–32 characters using letters, numbers, dot, underscore, or hyphen.';
+  return '';
+}
+
 function publicUser(row) {
   return {
     id: row.id,
     email: row.email,
     name: row.name || '',
-    picture: row.picture || ''
+    picture: row.picture || '',
+    username: row.username || '',
+    authProvider: row.auth_provider || (String(row.id || '').indexOf('google:') === 0 ? 'google' : 'email'),
+    hasPassword: Boolean(row.password_hash && row.password_salt)
   };
 }
 
 async function ensureTables(db) {
   await db.batch([
-    db.prepare('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT, picture TEXT, password_salt TEXT, password_hash TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)'),
+    db.prepare('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT, picture TEXT, username TEXT, auth_provider TEXT NOT NULL DEFAULT \'email\', password_salt TEXT, password_hash TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)'),
     db.prepare('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL)'),
     db.prepare('CREATE TABLE IF NOT EXISTS tracker_profiles (profile_key TEXT PRIMARY KEY, settings_json TEXT NOT NULL DEFAULT \'{}\', rows_json TEXT NOT NULL DEFAULT \'[]\', manual_entries_json TEXT NOT NULL DEFAULT \'[]\', reported_weeks_json TEXT NOT NULL DEFAULT \'[]\', last_sync TEXT, updated_at TEXT NOT NULL)')
   ]);
   try { await db.prepare('ALTER TABLE users ADD COLUMN password_salt TEXT').run(); } catch (error) {}
   try { await db.prepare('ALTER TABLE users ADD COLUMN password_hash TEXT').run(); } catch (error) {}
+  try { await db.prepare('ALTER TABLE users ADD COLUMN username TEXT').run(); } catch (error) {}
+  try { await db.prepare("ALTER TABLE users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'email'").run(); } catch (error) {}
   try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN manual_entries_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
   try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN reported_weeks_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
+  try { await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS users_username_unique ON users(username) WHERE username IS NOT NULL AND username <> ''").run(); } catch (error) {}
 }
 
 async function currentUser(request, db) {
   const token = cookies(request).staffme_session;
   if (!token) return null;
   const tokenHash = await hash(token);
-  const row = await db.prepare('SELECT u.id, u.email, u.name, u.picture FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?').bind(tokenHash, new Date().toISOString()).first();
+  const row = await db.prepare('SELECT u.id, u.email, u.name, u.picture, u.username, u.auth_provider, u.password_salt, u.password_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?').bind(tokenHash, new Date().toISOString()).first();
   return row || null;
 }
 
@@ -135,15 +151,26 @@ async function register(request, db) {
 
   const email = normalizeEmail(body && body.email);
   const name = String(body && body.name || '').trim().slice(0, 120);
+  const username = normalizeUsername(body && body.username);
   const password = String(body && body.password || '');
   const passwordConfirm = String(body && body.passwordConfirm || '');
   const validationError = validateCredentials(email, password);
   if (validationError) return json({ ok: false, error: validationError }, 400);
   if (!name) return json({ ok: false, error: 'Enter your name.' }, 400);
+  const usernameValidation = usernameError(username);
+  if (usernameValidation) return json({ ok: false, error: usernameValidation }, 400);
   if (password !== passwordConfirm) return json({ ok: false, error: 'Passwords do not match.' }, 400);
 
-  const existing = await db.prepare('SELECT id, email, name, picture, password_salt, password_hash, created_at FROM users WHERE email = ?').bind(email).first();
+  const existing = await db.prepare('SELECT id, email, name, picture, username, auth_provider, password_salt, password_hash, created_at FROM users WHERE lower(email) = ?').bind(email).first();
   if (existing && existing.password_hash) return json({ ok: false, error: 'An account with this email already exists. Log in instead.' }, 409);
+  if (existing && existing.username && normalizeUsername(existing.username) !== username) {
+    return json({ ok: false, error: 'That account already has a different username. Log in instead.' }, 409);
+  }
+
+  const usernameOwner = await db.prepare('SELECT id FROM users WHERE lower(username) = ? LIMIT 1').bind(username).first();
+  if (usernameOwner && (!existing || usernameOwner.id !== existing.id)) {
+    return json({ ok: false, error: 'That username is already in use.' }, 409);
+  }
 
   const now = new Date().toISOString();
   const userId = existing ? existing.id : 'email:' + await hash(email);
@@ -151,12 +178,12 @@ async function register(request, db) {
   const derived = await passwordHash(password, salt);
 
   if (existing) {
-    await db.prepare('UPDATE users SET name = ?, password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?').bind(name, salt, derived, now, userId).run();
+    await db.prepare('UPDATE users SET name = ?, username = COALESCE(NULLIF(username, \'\'), ?), password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?').bind(name, username, salt, derived, now, userId).run();
   } else {
-    await db.prepare('INSERT INTO users (id, email, name, picture, password_salt, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(userId, email, name, '', salt, derived, now, now).run();
+    await db.prepare('INSERT INTO users (id, email, name, picture, username, auth_provider, password_salt, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(userId, email, name, '', username, 'email', salt, derived, now, now).run();
   }
 
-  const user = await db.prepare('SELECT id, email, name, picture FROM users WHERE id = ?').bind(userId).first();
+  const user = await db.prepare('SELECT id, email, name, picture, username, auth_provider, password_salt, password_hash FROM users WHERE id = ?').bind(userId).first();
   const session = await createSession(db, userId);
   return json({ ok: true, user: publicUser(user) }, 200, { 'Set-Cookie': sessionCookie(session) });
 }
@@ -165,19 +192,105 @@ async function login(request, db) {
   let body;
   try { body = await request.json(); } catch (error) { return json({ ok: false, error: 'Invalid request.' }, 400); }
 
-  const email = normalizeEmail(body && body.email);
+  const identifier = String(body && body.email || '').trim().toLowerCase();
   const password = String(body && body.password || '');
-  if (!email || !password) return json({ ok: false, error: 'Enter your email and password.' }, 400);
+  if (!identifier || !password) return json({ ok: false, error: 'Enter your email or username and password.' }, 400);
 
-  const user = await db.prepare('SELECT id, email, name, picture, password_salt, password_hash FROM users WHERE email = ?').bind(email).first();
-  if (!user || !user.password_hash || !user.password_salt) return json({ ok: false, error: 'Incorrect email or password.' }, 401);
+  const user = await db.prepare('SELECT id, email, name, picture, username, auth_provider, password_salt, password_hash FROM users WHERE lower(email) = ? OR lower(username) = ? LIMIT 1').bind(identifier, identifier).first();
+  if (!user || !user.password_hash || !user.password_salt) return json({ ok: false, error: 'Incorrect email/username or password.' }, 401);
 
   const derived = await passwordHash(password, user.password_salt);
-  if (!safeEqual(derived, user.password_hash)) return json({ ok: false, error: 'Incorrect email or password.' }, 401);
+  if (!safeEqual(derived, user.password_hash)) return json({ ok: false, error: 'Incorrect email/username or password.' }, 401);
 
   await db.prepare('UPDATE users SET updated_at = ? WHERE id = ?').bind(new Date().toISOString(), user.id).run();
   const session = await createSession(db, user.id);
   return json({ ok: true, user: publicUser(user) }, 200, { 'Set-Cookie': sessionCookie(session) });
+}
+
+async function accountSettings(request, db) {
+  let body;
+  try { body = await request.json(); } catch (error) { return json({ ok: false, error: 'Invalid request.' }, 400); }
+
+  const sessionUser = await currentUser(request, db);
+  if (!sessionUser) return json({ ok: false, error: 'You are not signed in.' }, 401);
+
+  const current = await db.prepare('SELECT id, email, name, picture, username, auth_provider, password_salt, password_hash FROM users WHERE id = ?').bind(sessionUser.id).first();
+  if (!current) return json({ ok: false, error: 'Account not found.' }, 404);
+
+  const currentEmail = normalizeEmail(current.email);
+  const requestedEmail = normalizeEmail(body && body.email) || currentEmail;
+  const currentUsername = normalizeUsername(current.username);
+  const hasUsernameField = body && Object.prototype.hasOwnProperty.call(body, 'username');
+  const requestedUsername = hasUsernameField ? normalizeUsername(body.username) : currentUsername;
+  const provider = current.auth_provider || (String(current.id || '').indexOf('google:') === 0 ? 'google' : 'email');
+  const currentPassword = String(body && body.currentPassword || '');
+  const newPassword = String(body && body.newPassword || '');
+  const newPasswordConfirm = String(body && body.newPasswordConfirm || '');
+  const changingPassword = Boolean(newPassword || newPasswordConfirm);
+  const changingUsername = requestedUsername !== currentUsername;
+  const changingEmail = requestedEmail !== currentEmail;
+
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(requestedEmail)) {
+    return json({ ok: false, error: 'Enter a valid email address.' }, 400);
+  }
+  if (provider === 'google' && changingEmail) {
+    return json({ ok: false, error: 'Google account email cannot be changed here.' }, 403);
+  }
+  if (currentUsername && changingUsername) {
+    return json({ ok: false, error: 'Username cannot be changed after it is set.' }, 403);
+  }
+  if (!currentUsername && requestedUsername) {
+    const usernameValidation = usernameError(requestedUsername);
+    if (usernameValidation) return json({ ok: false, error: usernameValidation }, 400);
+    const usernameOwner = await db.prepare('SELECT id FROM users WHERE lower(username) = ? LIMIT 1').bind(requestedUsername).first();
+    if (usernameOwner && usernameOwner.id !== current.id) return json({ ok: false, error: 'That username is already in use.' }, 409);
+  }
+  if (changingPassword) {
+    if (!newPassword || !newPasswordConfirm) return json({ ok: false, error: 'Enter and confirm the new password.' }, 400);
+    if (newPassword.length < 8) return json({ ok: false, error: 'Password must be at least 8 characters.' }, 400);
+    if (newPassword.length > 256) return json({ ok: false, error: 'Password is too long.' }, 400);
+    if (newPassword !== newPasswordConfirm) return json({ ok: false, error: 'New passwords do not match.' }, 400);
+  }
+  if (provider === 'google' && !current.password_hash && ((changingUsername && !changingPassword) || (changingPassword && !requestedUsername))) {
+    return json({ ok: false, error: 'Set a username and a password together to enable username/password login.' }, 400);
+  }
+
+  const needsCurrentPassword = Boolean(current.password_hash && current.password_salt && (changingEmail || changingUsername || changingPassword));
+  if (needsCurrentPassword) {
+    if (!currentPassword) return json({ ok: false, error: 'Enter your current password to change account credentials.' }, 400);
+    const derived = await passwordHash(currentPassword, current.password_salt);
+    if (!safeEqual(derived, current.password_hash)) return json({ ok: false, error: 'Current password is incorrect.' }, 401);
+  }
+  if (changingEmail) {
+    if (!current.password_hash || !current.password_salt) return json({ ok: false, error: 'Set a password before changing your email.' }, 400);
+    const emailOwner = await db.prepare('SELECT id FROM users WHERE lower(email) = ? LIMIT 1').bind(requestedEmail).first();
+    if (emailOwner && emailOwner.id !== current.id) return json({ ok: false, error: 'That email is already in use.' }, 409);
+  }
+
+  const updates = [];
+  const values = [];
+  if (changingEmail) {
+    updates.push('email = ?');
+    values.push(requestedEmail);
+  }
+  if (changingUsername) {
+    updates.push('username = ?');
+    values.push(requestedUsername);
+  }
+  if (changingPassword) {
+    const salt = randomHex(16);
+    const derived = await passwordHash(newPassword, salt);
+    updates.push('password_salt = ?', 'password_hash = ?');
+    values.push(salt, derived);
+  }
+  if (!updates.length) return json({ ok: true, user: publicUser(current) });
+
+  updates.push('updated_at = ?');
+  values.push(new Date().toISOString(), current.id);
+  await db.prepare('UPDATE users SET ' + updates.join(', ') + ' WHERE id = ?').bind(...values).run();
+
+  const updated = await db.prepare('SELECT id, email, name, picture, username, auth_provider, password_salt, password_hash FROM users WHERE id = ?').bind(current.id).first();
+  return json({ ok: true, user: publicUser(updated) });
 }
 
 async function googleLogin(request, db, env, url) {
@@ -212,11 +325,15 @@ async function googleLogin(request, db, env, url) {
   const email = normalizeEmail(profile.email);
   if (!profile.sub || !email) return json({ ok: false, error: 'Google did not return an email.' }, 401);
 
-  const existing = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  const existing = await db.prepare('SELECT id, auth_provider FROM users WHERE email = ?').bind(email).first();
   const userId = existing ? existing.id : 'google:' + profile.sub;
   const now = new Date().toISOString();
 
-  await db.prepare('INSERT INTO users (id, email, name, picture, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET email = excluded.email, name = excluded.name, picture = excluded.picture, updated_at = excluded.updated_at').bind(userId, email, profile.name || '', profile.picture || '', now, now).run();
+  if (existing) {
+    await db.prepare('UPDATE users SET name = ?, picture = ?, updated_at = ? WHERE id = ?').bind(profile.name || '', profile.picture || '', now, userId).run();
+  } else {
+    await db.prepare('INSERT INTO users (id, email, name, picture, username, auth_provider, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(userId, email, profile.name || '', profile.picture || '', null, 'google', now, now).run();
+  }
 
   const session = await createSession(db, userId);
   return redirect(url.origin + '/?auth=success', {
@@ -240,6 +357,7 @@ export async function onRequest(context) {
 
   if (mode === 'register' && request.method === 'POST') return register(request, db);
   if (mode === 'login' && request.method === 'POST') return login(request, db);
+  if (mode === 'account' && request.method === 'POST') return accountSettings(request, db);
 
   if (mode === 'start') {
     if (!env.GOOGLE_CLIENT_ID) return json({ ok: false, error: 'Google sign-in is not configured yet. Use email registration or login.' }, 503);
