@@ -729,7 +729,7 @@
       }
     });
 
-    render();
+    window.setTimeout(function() { window.postMessage({ type: 'STAFFME_REQUEST_DATA' }, '*'); }, 900);\n\n    render();
   </script>
 </body>
 </html>
