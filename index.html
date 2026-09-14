@@ -285,7 +285,7 @@
         <div class="contract-total-grid" id="contractSummary"></div>
         <div class="table-scroll">
           <table class="day-table contract-week-table">
-            <thead><tr><th>Agreement week</th><th>Date range</th><th>Work hours</th><th>In coverage</th><th>Adherence</th></tr></thead>
+            <thead><tr><th>Agreement week</th><th>Date range</th><th>Work hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead>
             <tbody id="contractWeekRows"></tbody>
           </table>
         </div>
@@ -728,7 +728,7 @@
 
       const cards = [
         { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'All StaffMe hourly rows' },
-        { name: 'InCoverage Hours', value: summary.coverage, target: state.settings.targets.coverage, className: 'orange', note: 'All duty hours, including adherence' },
+        { name: 'InCoverage Hours', value: summary.coverage, target: state.settings.targets.coverage, className: 'orange', note: 'Duty-window rows only, including adherence' },
         { name: 'Weekend adherence hours', value: summary.weekend, target: state.settings.targets.weekend, className: 'green', note: 'Selected adherence days' }
       ];
       document.getElementById('metricGrid').innerHTML = cards.map(function(card) {
@@ -761,7 +761,7 @@
         document.getElementById('contractSummary').innerHTML = [
           ['Total work hours', contractSummary.work],
           ['Total in coverage', contractSummary.coverage],
-          ['Total adherence', contractSummary.adherence]
+          ['Total weekend adherence', contractSummary.adherence]
         ].map(function(item) {
           return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong></div>';
         }).join('');
