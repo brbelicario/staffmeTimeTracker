@@ -670,7 +670,7 @@
       <div class="content-grid">
         <section class="panel">
           <div class="panel-head">
-            <div><div class="week-label">Selected week</div><h2 id="weekTitle">Current week</h2><p>Hourly rows use the contract date, so overnight hours stay with the shift that started the evening before.</p></div>
+            <div><div class="week-label">Selected week</div><h2 id="weekTitle">Current week</h2><p>All totals use the actual StaffMe calendar date and time.</p></div>
           </div>
           <div class="week-summary" id="weekSummary"></div>
           <div id="metricBars"></div>
@@ -769,9 +769,9 @@
 
 <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Contract daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the contract term.</p></div>
+          <div><div class="week-label">Contract daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured StaffMe calendar dates inside the contract term.</p></div>
         </div>
-        <div class="table-scroll"><table class="day-table"><thead><tr><th>Contract date</th><th>Classification</th><th>Total work hours</th><th>In coverage</th><th>Outside duty</th><th>Weekend adherence</th><th>Manual / Other Task</th></tr></thead><tbody id="dayRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Total work hours</th><th>In coverage</th><th>Outside duty</th><th>Weekend adherence</th><th>Manual / Other Task</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
       </section>
     </section>
@@ -1056,9 +1056,8 @@
 
       trackedItems().forEach(function(item) {
         const date = item.date;
-        const contractDate = contractDateForItem(item);
-        if (!date || (range && !dateInRange(contractDate, range))) return;
-        const groupDate = contractDate || date;
+        if (!date || (range && !dateInRange(date, range))) return;
+        const groupDate = date;
         const metrics = itemMetrics(item);
         const key = isoDate(groupDate);
         work += metrics.value;
@@ -1262,7 +1261,7 @@
           manualOutside: 0
         };
         trackedItems().forEach(function(item) {
-          const date = contractDateForItem(item);
+          const date = item.date;
           if (!date || date < week.start || date > week.end) return;
           const metrics = itemMetrics(item);
           week.work += metrics.value;
@@ -1302,7 +1301,7 @@
       if (!cap) return [];
       const map = new Map();
       trackedItems().forEach(function(item) {
-        const date = contractDateForItem(item);
+        const date = item.date;
         if (!date || (range && (range.invalid || !dateInRange(date, range)))) return;
         const key = isoDate(date);
         map.set(key, (map.get(key) || 0) + item.value);
@@ -1646,7 +1645,7 @@
       if (!range || range.invalid) return null;
       const official = summarizeOfficialWeeks(officialAgreementWeeks(range));
       const rows = normalizeRows(state.rows).filter(function(row) {
-        return dateInRange(contractDateForRow(row), range);
+        return dateInRange(calendarDateFor(row), range);
       });
       const manualEntries = normalizeManualEntries(state.manualEntries).filter(function(entry) {
         return dateInRange(parseDate(entry.date), range);
@@ -1681,7 +1680,7 @@
         end: isoDate(range.end),
         settings: settings,
         rows: normalizeRows(state.rows).filter(function(row) {
-          return dateInRange(contractDateForRow(row), range);
+          return dateInRange(calendarDateFor(row), range);
         }),
         manualEntries: normalizeManualEntries(state.manualEntries).filter(function(entry) {
           return dateInRange(parseDate(entry.date), range);
@@ -1901,19 +1900,6 @@
       return date;
     }
 
-    function contractDateForRow(row) {
-      const date = calendarDateFor(row);
-      const start = parseMinutes(state.settings.start);
-      const end = parseMinutes(state.settings.end);
-      const time = parseMinutes(row && row.time);
-      if (!date || start === null || end === null || time === null) return date;
-      if (end < start && time < start) date.setDate(date.getDate() - 1);
-      return date;
-    }
-
-    function contractDateForItem(item) {
-      return item && (item.contractDate || item.date);
-    }
 
     function withinDutyWindow(row) {
       const start = parseMinutes(state.settings.start);
@@ -1992,17 +1978,15 @@
       const items = [];
       state.rows.forEach(function(row) {
         const date = calendarDateFor(row);
-        const contractDate = contractDateForRow(row) || date;
         if (!date) return;
         const coverage = withinDutyWindow(row);
         items.push({
           source: 'staffme',
           key: 'staffme:' + rowKey(row),
           date: date,
-          contractDate: contractDate,
           value: Math.max(0, Number(row.workedHours || 0)),
           coverage: coverage ? Math.max(0, Number(row.workedHours || 0)) : 0,
-          adherence: coverage && categoryFor(contractDate) === 'adherence' ? Math.max(0, Number(row.workedHours || 0)) : 0,
+          adherence: coverage && categoryFor(date) === 'adherence' ? Math.max(0, Number(row.workedHours || 0)) : 0,
           row: row
         });
       });
@@ -2014,7 +1998,6 @@
           source: 'manual',
           key: 'manual:' + entry.id,
           date: date,
-          contractDate: date,
           value: Math.max(0, Number(entry.hours || 0)),
           coverage: Math.max(0, Number(entry.coverageHours || 0)),
           adherence: Math.max(0, Number(entry.adherenceHours || 0)),
@@ -2033,7 +2016,7 @@
       let weekend = 0;
 
       trackedItems().forEach(function(item) {
-        const date = contractDateForItem(item);
+        const date = item.date;
         if (!date || (range && (range.invalid || !dateInRange(date, range))) || !isInWeek(date, start)) return;
         const metrics = itemMetrics(item);
         const key = isoDate(date);
@@ -2682,7 +2665,7 @@
             '<div class="field-grid"><div class="field"><label for="newStartTime">Duty starts</label><input id="newStartTime" type="time" value="' + escapeHtml(draft.start) + '" required></div><div class="field"><label for="newEndTime">Duty ends</label><input id="newEndTime" type="time" value="' + escapeHtml(draft.end) + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="newAdherenceDay" value="' + day + '"' + (draft.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
-            }).join('') + '</div><div class="field-help">A shift is classified by its starting day. All other days become coverage days automatically.</div></div>' +
+            }).join('') + '</div><div class="field-help">Rows use the actual StaffMe calendar date for classification; duty time determines whether a row is InCoverage.</div></div>' +
             '<div class="field-grid"><div class="field"><label for="newWorkTarget">Work Hours target</label><input id="newWorkTarget" type="number" min="0" step=".01" value="' + draft.targets.work + '"></div><div class="field"><label for="newCoverageTarget">InCoverage target</label><input id="newCoverageTarget" type="number" min="0" step=".01" value="' + draft.targets.coverage + '"></div></div>' +
             '<div class="field"><label for="newWeekendTarget">Weekend adherence target</label><input id="newWeekendTarget" type="number" min="0" step=".01" value="' + draft.targets.weekend + '"></div>' +
             '<div class="field-grid"><div class="field"><label for="newDailyCap">Daily work cap reminder</label><input id="newDailyCap" type="number" min="0" step=".01" value="' + draft.caps.daily + '"></div><div class="field"><label for="newWeeklyCap">Contract weekly work cap</label><input id="newWeeklyCap" type="number" min="0" step=".01" value="' + draft.caps.weekly + '"></div></div>' +
@@ -2826,7 +2809,7 @@
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
-            }).join('') + '</div><div class="field-help">A shift is classified by its starting day. All other days become coverage days automatically.</div></div>' +
+            }).join('') + '</div><div class="field-help">Rows use the actual StaffMe calendar date for classification; duty time determines whether a row is InCoverage.</div></div>' +
             '<div class="field-grid"><div class="field"><label for="workTarget">Work Hours target</label><input id="workTarget" type="number" min="0" step=".01" value="' + state.settings.targets.work + '"></div><div class="field"><label for="coverageTarget">InCoverage target</label><input id="coverageTarget" type="number" min="0" step=".01" value="' + state.settings.targets.coverage + '"></div></div>' +
             '<div class="field"><label for="weekendTarget">Weekend adherence target</label><input id="weekendTarget" type="number" min="0" step=".01" value="' + state.settings.targets.weekend + '"></div>' +
             '<div class="field-grid"><div class="field"><label for="dailyCap">Daily work cap reminder</label><input id="dailyCap" type="number" min="0" step=".01" value="' + state.settings.caps.daily + '"></div><div class="field"><label for="weeklyCap">Contract weekly work cap</label><input id="weeklyCap" type="number" min="0" step=".01" value="' + state.settings.caps.weekly + '"></div></div>' +
