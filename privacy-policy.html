@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy — SMTracker by B. Belicario</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17243d;
+      --muted: #5d6b83;
+      --line: #dbe4ee;
+      --accent: #0c94b5;
+      --paper: #ffffff;
+      --background: #f4f7fb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--ink);
+      font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(860px, calc(100% - 32px));
+      margin: 48px auto;
+      padding: 40px 44px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(23, 36, 61, 0.06);
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(30px, 5vw, 46px); line-height: 1.1; }
+    h2 { margin: 34px 0 10px; font-size: 22px; line-height: 1.25; }
+    p, ul { margin: 10px 0; }
+    ul { padding-left: 24px; }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .updated, .note { color: var(--muted); }
+    .notice {
+      margin: 24px 0;
+      padding: 16px 18px;
+      background: #eef9fc;
+      border: 1px solid #bfe8f0;
+      border-radius: 12px;
+    }
+    a { color: #087c9c; }
+    @media (max-width: 600px) {
+      main { margin: 16px auto; padding: 26px 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">SMTracker by B. Belicario</p>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: September 15, 2026</p>
+
+    <div class="notice">
+      SMTracker is an independent time-tracking tool. It is not made by, sponsored by, or affiliated with StaffMe.
+    </div>
+
+    <h2>What this policy covers</h2>
+    <p>
+      This policy explains how the SMTracker browser extension and its companion time-tracker dashboard
+      handle information when you choose to use them.
+    </p>
+
+    <h2>Information the extension handles</h2>
+    <p>
+      After you give permission in the extension's on-page disclosure, SMTracker reads only the StaffMe
+      hourly-work data needed for the tracker, such as the displayed date, time, worked-hour value, and
+      related hourly metrics. It may read the response that renders that hourly table so the same rows can
+      be captured when the table is inside StaffMe's page preview.
+    </p>
+    <p>
+      The extension stores normalized hourly rows, a sync timestamp, and diagnostic status in Chrome's
+      extension storage. It does not read passwords, cookies, authentication tokens, general browsing
+      history, or unrelated page content.
+    </p>
+
+    <h2>How the information is used</h2>
+    <p>
+      The information is used only to make hourly rows available to the SMTracker dashboard so it can
+      calculate total work hours, coverage, weekend adherence, contract progress, and pay estimates.
+      The dashboard may request the stored rows when you press Refresh data or when its optional
+      auto-refresh feature is enabled.
+    </p>
+
+    <h2>Dashboard and cloud synchronization</h2>
+    <p>
+      If you use the companion dashboard's sign-in and cloud-sync features, the dashboard may also process
+      the email or username you enter, tracker settings, manual hour entries, contract settings, weekly
+      metrics, and the captured hourly rows. This lets your tracker profile be restored across devices.
+      The extension itself does not collect your StaffMe password or StaffMe session credentials.
+    </p>
+
+    <h2>Sharing and limited use</h2>
+    <p>
+      Captured rows are made available to the companion SMTracker dashboard. If you enable cloud sync,
+      the dashboard stores the tracker profile with its hosting and database providers so that the service
+      can operate. We do not sell this information, use it for advertising, or use it for credit,
+      insurance, employment, or unrelated profiling decisions.
+    </p>
+    <p>
+      SMTracker's use of information received from StaffMe pages and other user data complies with the
+      Chrome Web Store User Data Policy, including its Limited Use requirements. Data is used only to
+      provide the disclosed time-tracking feature and is not transferred for unrelated purposes.
+    </p>
+
+    <h2>Storage, retention, and deletion</h2>
+    <p>
+      The browser copy remains in Chrome extension storage until you clear the extension's data or remove
+      the extension. If you use cloud synchronization, the dashboard profile remains available for the
+      service to restore your tracker until it is deleted. To request deletion of cloud-synchronized
+      tracker data, email <a href="mailto:br.belicario@gmail.com">br.belicario@gmail.com</a>.
+    </p>
+
+    <h2>Security</h2>
+    <p>
+      The dashboard is served over HTTPS, and network requests used for cloud synchronization are sent
+      over HTTPS. No online service can guarantee absolute security, so please use the extension only on
+      devices and accounts you control.
+    </p>
+
+    <h2>Changes and contact</h2>
+    <p>
+      If the data practices change, this page will be updated before the change is used in the product.
+      Questions about this policy can be sent to
+      <a href="mailto:br.belicario@gmail.com">br.belicario@gmail.com</a>.
+    </p>
+  </main>
+</body>
+</html>
