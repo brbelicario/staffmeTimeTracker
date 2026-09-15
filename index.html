@@ -589,15 +589,15 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Current average view</div><h2 id="contractTitle">Agreement term not set</h2></div>
+          <div><div class="week-label">Current average view</div><h2 id="contractTitle">Contract dates not set</h2></div>
         </div>
         <div class="week-label average-label">Current averages</div>
-        <p class="muted average-help">Total work includes all available data. Current averages use only agreement weeks with data; future or zero-data weeks are excluded.</p>
+        <p class="muted average-help">Total work includes all available data. Current averages use only contract weeks with data; future or zero-data weeks are excluded.</p>
         <div class="contract-total-grid" id="contractAverage"></div>
         <div id="contractHistory"></div>
         <div class="table-scroll">
           <table class="day-table contract-week-table">
-            <thead><tr><th>Agreement week</th><th>Date range</th><th>Work hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead>
+            <thead><tr><th>Contract week</th><th>Date range</th><th>Work hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead>
             <tbody id="contractWeekRows"></tbody>
           </table>
         </div>
@@ -605,31 +605,31 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Weekly performance email</div><h2>Reported weekly metrics</h2><p>Enter the values from your weekly StaffMe performance email. Completed weeks update the agreement totals; current and future weeks remain live tracked totals.</p></div>
+          <div><div class="week-label">Weekly performance email</div><h2>Reported weekly metrics</h2><p>Enter the values from your weekly StaffMe performance email. Completed weeks update the contract totals; current and future weeks remain live tracked totals.</p></div>
         </div>
         <div class="note report-help"><span>●</span><div>Use this for the email’s contract/coverage-week table, such as Week 1: 70.59 Work, 52.54 InCoverage, and 17.39 Weekend adherence.</div></div>
-        <div class="table-scroll"><table class="day-table report-table"><thead><tr><th>Agreement week</th><th>Date range</th><th>Reported work</th><th>Reported InCoverage</th><th>Reported adherence</th></tr></thead><tbody id="reportedWeekRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table report-table"><thead><tr><th>Contract week</th><th>Date range</th><th>Reported work</th><th>Reported InCoverage</th><th>Reported adherence</th></tr></thead><tbody id="reportedWeekRows"></tbody></table></div>
         <div class="modal-actions"><button class="btn btn-primary" id="saveReportedBtn" type="button">Save reported values</button></div>
       </section>
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Contract coverage cap</div><h2>Weekly work-hour reminder</h2><p>Weeks follow the agreement term from its start date in seven-day blocks. Completed weeks use reported email Work Hours when entered; current and future weeks use StaffMe plus manual tracked hours.</p></div>
+          <div><div class="week-label">Contract coverage cap</div><h2>Weekly work-hour reminder</h2><p>Weeks follow the contract term from its start date in seven-day blocks. Completed weeks use reported email Work Hours when entered; current and future weeks use StaffMe plus manual tracked hours.</p></div>
         </div>
         <div id="capSummary"></div>
-        <div class="table-scroll"><table class="day-table"><thead><tr><th>Agreement week</th><th>Date range</th><th>Weekly work</th><th>Cap</th><th>Status</th></tr></thead><tbody id="capRows"></tbody></table></div>
+        <div class="table-scroll"><table class="day-table"><thead><tr><th>Contract week</th><th>Date range</th><th>Weekly work</th><th>Cap</th><th>Status</th></tr></thead><tbody id="capRows"></tbody></table></div>
       </section>
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Agreement calendar</div><h2>Adherence calendar</h2><p>Each hourly row is classified using its actual calendar date. Overnight rows after midnight belong to that calendar date.</p></div>
+          <div><div class="week-label">Contract calendar</div><h2>Adherence calendar</h2><p>Each hourly row is classified using its actual calendar date. Overnight rows after midnight belong to that calendar date.</p></div>
         </div>
         <div id="contractCalendar"></div>
       </section>
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Agreement daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the agreement term.</p></div>
+          <div><div class="week-label">Contract daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the contract term.</p></div>
         </div>
         <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Total work hours</th><th>In coverage</th><th>Outside duty</th><th>Weekend adherence</th><th>Manual / Other Task</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
@@ -1007,7 +1007,7 @@
       root.innerHTML =
         '<div class="pay-estimate">' +
           '<div class="pay-estimate-head">' +
-            '<div><div class="week-label">Pay estimate</div><h3>Possible contract pay</h3><p>Based on ' + hours(totalHours) + 'h total work in this agreement term.</p></div>' +
+            '<div><div class="week-label">Pay estimate</div><h3>Possible contract pay</h3><p>Based on ' + hours(totalHours) + 'h total work in this contract term.</p></div>' +
             '<div class="pay-amount"><strong>$' + money(usdTotal) + '</strong><span>' + phpTotalLabel + '</span></div>' +
           '</div>' +
           '<div class="pay-estimate-grid">' +
@@ -1098,7 +1098,7 @@
         ? '<div class="cap-warning"><strong>Daily cap warning:</strong> ' + dailyWarnings.slice(0, 3).map(function(item) { return formatDate(item.date) + ' has ' + hours(item.work) + 'h'; }).join('; ') + (dailyWarnings.length > 3 ? '; +' + (dailyWarnings.length - 3) + ' more.' : '.') + ' Daily limit: ' + hours(state.settings.caps.daily) + 'h.</div>'
         : '';
       if (!range || range.invalid) {
-        document.getElementById('capSummary').innerHTML = '<div class="empty">Set a valid agreement term to calculate the contract coverage weeks.</div>';
+        document.getElementById('capSummary').innerHTML = '<div class="empty">Set a valid contract term to calculate the contract coverage weeks.</div>';
         document.getElementById('capRows').innerHTML = '<tr><td colspan="5"><div class="empty">No contract coverage weeks available.</div></td></tr>';
         return;
       }
@@ -1111,7 +1111,7 @@
       const statusLabel = currentStatus === 'over' ? 'Over cap' : currentStatus === 'near' ? 'Near cap' : 'Within cap';
       document.getElementById('capSummary').innerHTML = warningText +
         '<div class="cap-grid">' +
-          '<div class="cap-card"><strong>Current agreement week: ' + hours(current.work) + 'h / ' + hours(cap) + 'h</strong><span>Week ' + current.index + ': ' + formatDate(current.start) + ' – ' + formatDate(current.end) + ' · <span class="cap-status ' + currentStatus + '">' + statusLabel + '</span></span></div>' +
+          '<div class="cap-card"><strong>Current contract week: ' + hours(current.work) + 'h / ' + hours(cap) + 'h</strong><span>Week ' + current.index + ': ' + formatDate(current.start) + ' – ' + formatDate(current.end) + ' · <span class="cap-status ' + currentStatus + '">' + statusLabel + '</span></span></div>' +
           '<div class="cap-card"><strong>Daily reminder: ' + hours(state.settings.caps.daily) + 'h</strong><span>Daily warnings use actual calendar-date rows. The weekly cap uses the contract coverage period.</span></div>' +
         '</div>';
       document.getElementById('capRows').innerHTML = rows.map(function(row) {
@@ -1125,11 +1125,11 @@
     function renderContractCalendar(range) {
       const root = document.getElementById('contractCalendar');
       if (!range) {
-        root.innerHTML = '<div class="empty">Set an agreement start and end date to show the calendar.</div>';
+        root.innerHTML = '<div class="empty">Set an contract start and end date to show the calendar.</div>';
         return;
       }
       if (range.invalid) {
-        root.innerHTML = '<div class="empty">The agreement dates are invalid. Check the start and end dates in Tracker Settings.</div>';
+        root.innerHTML = '<div class="empty">The contract dates are invalid. Check the start and end dates in Tracker Settings.</div>';
         return;
       }
 
@@ -1168,7 +1168,7 @@
         cursor.setMonth(cursor.getMonth() + 1);
       }
 
-      root.innerHTML = '<div class="calendar-legend"><span class="legend-adherence">Adherence day</span><span class="legend-coverage">Coverage day</span><span class="legend-outside">Outside agreement</span></div>' + monthBlocks.join('');
+      root.innerHTML = '<div class="calendar-legend"><span class="legend-adherence">Adherence day</span><span class="legend-coverage">Coverage day</span><span class="legend-outside">Outside contract</span></div>' + monthBlocks.join('');
     }
 
     function isoDate(date) {
@@ -1744,7 +1744,7 @@
       const root = document.getElementById('reportedWeekRows');
       const saveButton = document.getElementById('saveReportedBtn');
       if (!agreementWeeks.length) {
-        root.innerHTML = '<tr><td colspan="5"><div class="empty">Set an agreement term first, then enter the values from each weekly performance email.</div></td></tr>';
+        root.innerHTML = '<tr><td colspan="5"><div class="empty">Set an contract term first, then enter the values from each weekly performance email.</div></td></tr>';
         saveButton.disabled = true;
         return;
       }
@@ -1771,7 +1771,7 @@
       const range = contractRange();
       const weeks = contractWeeks(range);
       if (!weeks.length) {
-        showToast('Set an agreement term before saving weekly values.');
+        showToast('Set an contract term before saving weekly values.');
         return;
       }
       const reports = new Map();
@@ -1794,7 +1794,7 @@
       saveProfile();
       queueRemoteSave();
       render();
-      showToast('Reported values saved. Completed weeks now update the agreement totals.');
+      showToast('Reported values saved. Completed weeks now update the contract totals.');
     }
 
     function openManualEntry() {
@@ -1930,7 +1930,7 @@
       document.getElementById('weekRange').textContent = formatDate(summary.start) + ' – ' + formatDate(end);
       document.getElementById('weekTitle').textContent = agreementWeekTitle(summary.start, range);
       const termIsValid = Boolean(range && !range.invalid);
-      document.getElementById('contractTitle').textContent = termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Agreement term not set';
+      document.getElementById('contractTitle').textContent = termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Contract dates not set';
       const hasRows = state.rows.length > 0;
       const tableFound = Boolean(state.helperStatus && state.helperStatus.tableFound);
       const parsedRows = state.helperStatus ? Number(state.helperStatus.parsedRows || 0) : 0;
@@ -2010,28 +2010,28 @@
           : 0;
 
         document.getElementById('contractAverage').innerHTML = [
-          ['Total work hours', officialSummary.work, 'All available StaffMe, manual, and reported work in the agreement term.'],
-          ['Current Average InCoverage', averageCoverage, 'Based on ' + weekCount + ' agreement data week' + (weekCount === 1 ? '' : 's') + '. Target ' + hours(state.settings.targets.coverage) + 'h per week.'],
-          ['Current Average weekend adherence', averageAdherence, 'Based on ' + weekCount + ' agreement data week' + (weekCount === 1 ? '' : 's') + '. Target ' + hours(state.settings.targets.weekend) + 'h per week.']
+          ['Total work hours', officialSummary.work, 'All available StaffMe, manual, and reported work in the contract term.'],
+          ['Current Average InCoverage', averageCoverage, 'Based on ' + weekCount + ' contract data week' + (weekCount === 1 ? '' : 's') + '. Target ' + hours(state.settings.targets.coverage) + 'h per week.'],
+          ['Current Average weekend adherence', averageAdherence, 'Based on ' + weekCount + ' contract data week' + (weekCount === 1 ? '' : 's') + '. Target ' + hours(state.settings.targets.weekend) + 'h per week.']
         ].map(function(item) {
           return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong><small>' + item[2] + '</small></div>';
         }).join('');
       } else {
-        document.getElementById('contractAverage').innerHTML = '<div class="empty">Set an agreement term to calculate current averages.</div>';
+        document.getElementById('contractAverage').innerHTML = '<div class="empty">Set an contract term to calculate current averages.</div>';
       }
 
       renderContractHistory();
 
       document.getElementById('contractWeekRows').innerHTML = officialWeeks.length ? officialWeeks.map(function(week) {
         return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + officialValueCell(week, 'displayWork', 'workReported') + '</td><td>' + officialValueCell(week, 'displayCoverage', 'coverageReported') + '</td><td>' + officialValueCell(week, 'displayAdherence', 'adherenceReported') + '</td></tr>';
-      }).join('') : '<tr><td colspan="5"><div class="empty">Set an agreement term to show weekly contract totals.</div></td></tr>';
+      }).join('') : '<tr><td colspan="5"><div class="empty">Set an contract term to show weekly contract totals.</div></td></tr>';
 
       renderContractCalendar(range);
       renderManualEntries();
       renderCapMonitor(range);
 
       document.getElementById('setupList').innerHTML =
-        '<div class="setup-item"><span>Agreement term</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
+        '<div class="setup-item"><span>Contract dates</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
         '<div class="setup-item"><span>Duty window</span><strong>' + state.settings.start + ' – ' + state.settings.end + '</strong></div>' +
         '<div class="setup-item"><span>Weekend adherence</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
@@ -2177,7 +2177,7 @@
     function openNewContract() {
       const current = contractRange();
       if (!current || current.invalid) {
-        showToast('Set a valid current agreement term before starting a new contract.');
+        showToast('Set a valid current contract term before starting a new contract.');
         return;
       }
       const suggestedStartDate = new Date(current.end);
@@ -2189,8 +2189,8 @@
           '<div class="modal-head"><div><div class="eyebrow">Contract history</div><h2>Start a new contract</h2><p class="muted">The current contract will be archived with its StaffMe rows, manual hours, and reported weekly metrics.</p></div><button class="close" id="closeNewContract" type="button">×</button></div>' +
           '<div class="note"><span>●</span><div><strong>Current contract:</strong> ' + formatDate(current.start) + ' – ' + formatDate(current.end) + '<br><span class="muted">Your duty schedule and targets will carry over to the new contract.</span></div></div>' +
           '<form id="newContractForm">' +
-            '<div class="field-grid"><div class="field"><label for="newContractStart">New agreement starts</label><input id="newContractStart" type="date" value="' + isoDate(suggestedStartDate) + '" required></div><div class="field"><label for="newContractEnd">New agreement ends</label><input id="newContractEnd" type="date" value="' + isoDate(suggestedEndDate) + '" required></div></div>' +
-            '<div class="field-help">Use the dates written in your new contract. Weeks will start from the new agreement start date.</div>' +
+            '<div class="field-grid"><div class="field"><label for="newContractStart">New contract starts</label><input id="newContractStart" type="date" value="' + isoDate(suggestedStartDate) + '" required></div><div class="field"><label for="newContractEnd">New contract ends</label><input id="newContractEnd" type="date" value="' + isoDate(suggestedEndDate) + '" required></div></div>' +
+            '<div class="field-help">Use the dates written in your new contract. Weeks will start from the new contract start date.</div>' +
             '<div id="newContractError" class="auth-error" hidden></div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelNewContract">Cancel</button><button type="submit" class="btn btn-primary">Archive and start new contract</button></div>' +
           '</form>' +
@@ -2206,7 +2206,7 @@
         const start = parseDate(startValue);
         const end = parseDate(endValue);
         if (!start || !end || start > end) {
-          errorRoot.textContent = 'Enter a valid new agreement date range.';
+          errorRoot.textContent = 'Enter a valid new contract date range.';
           errorRoot.hidden = false;
           return;
         }
@@ -2293,7 +2293,7 @@
         const excessRate = numberValue(document.getElementById('excessRate').value);
         const usdToPhp = numberValue(document.getElementById('usdToPhp').value);
         const exchangeRateMode = document.getElementById('exchangeRateMode').value === 'manual' ? 'manual' : 'automatic';
-        if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both agreement dates.'); return; }
+        if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both contract dates.'); return; }
         if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Contract end date must be on or after the start date.'); return; }
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
         if (minimumPaidHours <= 0) { showToast('Minimum paid hours must be greater than zero.'); return; }
