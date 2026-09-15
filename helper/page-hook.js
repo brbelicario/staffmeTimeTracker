@@ -174,7 +174,6 @@
   const originalSend = XMLHttpRequest.prototype.send;
 
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-    this.__staffMeTrackerUrl = String(url || "");
     return originalOpen.call(this, method, url, ...rest);
   };
 
