@@ -444,6 +444,28 @@
     .hourly-page-btn { min-width: 34px; min-height: 34px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: #fff; font-size: .74rem; font-weight: 850; }
     .hourly-page-btn:hover:not(:disabled), .hourly-page-btn.active { border-color: var(--cyan); color: #fff; background: var(--navy); }
     .hourly-page-btn:disabled { color: #aab5c3; background: #f3f5f8; cursor: not-allowed; }
+    .report-comparison-details { position: relative; display: inline-flex; margin-left: 6px; vertical-align: middle; }
+    .report-comparison-details > summary { list-style: none; }
+    .report-comparison-details > summary::-webkit-details-marker { display: none; }
+    .report-info-indicator {
+      width: 20px; height: 20px; display: inline-grid; place-items: center; padding: 0;
+      border: 1px solid #b9d7e1; border-radius: 50%; color: #147d97; background: #eefafd;
+      font-size: .72rem; font-weight: 950; line-height: 1; cursor: pointer;
+    }
+    .report-info-indicator:hover, .report-info-indicator:focus-visible { border-color: var(--cyan); background: #dff5fa; outline: 3px solid rgba(35,168,199,.16); outline-offset: 2px; }
+    .report-comparison-popover {
+      display: none; position: absolute; left: 0; top: calc(100% + 7px); z-index: 20;
+      width: min(330px, calc(100vw - 44px)); padding: 12px 13px;
+      border: 1px solid #c6e2e9; border-radius: 12px; color: #526176; background: #f8fdfe;
+      box-shadow: 0 12px 26px rgba(24,41,68,.15); font-size: .74rem; line-height: 1.45;
+    }
+    .report-comparison-details:hover .report-comparison-popover,
+    .report-comparison-details:focus-within .report-comparison-popover,
+    .report-comparison-details[open] .report-comparison-popover { display: grid; gap: 4px; }
+    .report-comparison-popover strong { color: var(--ink); font-size: .78rem; }
+    .report-comparison-popover span { display: block; }
+    .report-comparison-popover .comparison-delta { color: #147d97; font-weight: 800; }
+    .report-comparison-popover small { color: var(--muted); font-size: .68rem; }
     .hour-table { min-width: 680px; table-layout: fixed; }
     .hour-table th:nth-child(1), .hour-table td:nth-child(1) { width: 22%; }
     .hour-table th:nth-child(2), .hour-table td:nth-child(2) { width: 17%; }
@@ -1669,13 +1691,23 @@
       return (Array.isArray(entries) ? entries : []).map(function(entry) {
         const start = String(entry && entry.start || '').slice(0, 10);
         const end = String(entry && entry.end || '').slice(0, 10);
+        const snapshot = entry && entry.beforeReport && typeof entry.beforeReport === 'object' ? entry.beforeReport : null;
         return {
           index: Math.max(1, Math.floor(numberValue(entry && entry.index) || 1)),
           start: start,
           end: end,
           work: optionalNumber(entry && entry.work),
           coverage: optionalNumber(entry && entry.coverage),
-          adherence: optionalNumber(entry && entry.adherence)
+          adherence: optionalNumber(entry && entry.adherence),
+          reportedAt: String(entry && entry.reportedAt || ''),
+          beforeReport: snapshot ? {
+            work: Math.max(0, numberValue(snapshot.work)),
+            coverage: Math.max(0, numberValue(snapshot.coverage)),
+            adherence: Math.max(0, numberValue(snapshot.adherence)),
+            staffmeRows: Math.max(0, Math.floor(numberValue(snapshot.staffmeRows))),
+            manualEntries: Math.max(0, Math.floor(numberValue(snapshot.manualEntries))),
+            capturedAt: String(snapshot.capturedAt || '')
+          } : null
         };
       }).filter(function(entry) {
         return Boolean(parseDate(entry.start));
@@ -2291,7 +2323,9 @@
           displayAdherence: report && report.adherence !== null ? report.adherence : week.adherence,
           workReported: Boolean(report && report.work !== null),
           coverageReported: Boolean(report && report.coverage !== null),
-          adherenceReported: Boolean(report && report.adherence !== null)
+          adherenceReported: Boolean(report && report.adherence !== null),
+          report: report || null,
+          beforeReport: report && report.beforeReport ? report.beforeReport : null
         });
       });
     }
@@ -2309,6 +2343,74 @@
       const value = week[valueKey];
       const reported = week[reportedKey];
       return hours(value) + 'h' + (reported ? ' <span class="tag tag-neutral">Reported</span>' : '');
+    }
+
+    function signedHours(value) {
+      const number = Number(value || 0);
+      return (number > 0 ? '+' : '') + hours(number) + 'h';
+    }
+
+    function staffmeRowsForWeek(week) {
+      return state.rows.filter(function(row) {
+        const date = calendarDateFor(row);
+        return date && date >= week.start && date <= week.end;
+      }).length;
+    }
+
+    function manualEntriesForWeek(week) {
+      return state.manualEntries.filter(function(entry) {
+        const date = parseDate(entry.date);
+        if (!date) return false;
+        date.setHours(12, 0, 0, 0);
+        return date >= week.start && date <= week.end;
+      }).length;
+    }
+
+    function reportComparisonNotice(week) {
+      const report = week && week.report;
+      const live = {
+        work: Number(week && week.work || 0),
+        coverage: Number(week && week.coverage || 0),
+        adherence: Number(week && week.adherence || 0)
+      };
+      const label = 'View Week ' + Number(week && week.index || 0) + ' comparison';
+      if (!report) {
+        return '<details class="report-comparison-details"><summary class="report-info-indicator" aria-label="' + escapeHtml(label) + '" title="' + escapeHtml(label) + '">i</summary>' +
+          '<div class="report-comparison-popover"><strong>Gathered data so far</strong>' +
+            '<span>Work hours: ' + hours(live.work) + 'h</span><span>InCoverage: ' + hours(live.coverage) + 'h</span><span>Weekend adherence: ' + hours(live.adherence) + 'h</span>' +
+            '<small>' + staffmeRowsForWeek(week) + ' StaffMe rows · No email report entered yet.</small></div></details>';
+      }
+      const snapshot = report.beforeReport;
+      if (!snapshot) {
+        return '<details class="report-comparison-details"><summary class="report-info-indicator" aria-label="' + escapeHtml(label) + '" title="' + escapeHtml(label) + '">i</summary>' +
+          '<div class="report-comparison-popover"><strong>Reported email values</strong>' +
+            '<span>Work hours: ' + (report.work === null ? 'Not provided' : hours(report.work) + 'h') + '</span>' +
+            '<span>InCoverage: ' + (report.coverage === null ? 'Not provided' : hours(report.coverage) + 'h') + '</span>' +
+            '<span>Weekend adherence: ' + (report.adherence === null ? 'Not provided' : hours(report.adherence) + 'h') + '</span>' +
+            '<small>No before-report snapshot is available for this older report. Re-saving it will capture the current gathered values.</small></div></details>';
+      }
+      const reportValue = function(value) { return value === null || value === undefined ? null : Number(value); };
+      const comparisonLine = function(name, official, before) {
+        const value = reportValue(official);
+        return '<span>' + name + ': ' + (value === null ? 'Not provided' : hours(value) + 'h') + ' · Before: ' + hours(before) + 'h' + (value === null ? '' : ' · Difference: <b class="comparison-delta">' + signedHours(value - before) + '</b>') + '</span>';
+      };
+      return '<details class="report-comparison-details"><summary class="report-info-indicator" aria-label="' + escapeHtml(label) + '" title="' + escapeHtml(label) + '">i</summary>' +
+        '<div class="report-comparison-popover"><strong>Reported email vs. before report</strong>' +
+          comparisonLine('Work', report.work, snapshot.work) + comparisonLine('InCoverage', report.coverage, snapshot.coverage) + comparisonLine('Adherence', report.adherence, snapshot.adherence) +
+          '<small>Before report: ' + Number(snapshot.staffmeRows || 0) + ' StaffMe rows · ' + Number(snapshot.manualEntries || 0) + ' manual entries · Captured ' + escapeHtml(formatDateTime(snapshot.capturedAt)) + '</small>' +
+          (report.reportedAt ? '<small>Email values saved ' + escapeHtml(formatDateTime(report.reportedAt)) + '.</small>' : '') +
+        '</div></details>';
+    }
+
+    function beforeReportSnapshotForWeek(week) {
+      return {
+        work: Number(week.work || 0),
+        coverage: Number(week.coverage || 0),
+        adherence: Number(week.adherence || 0),
+        staffmeRows: staffmeRowsForWeek(week),
+        manualEntries: manualEntriesForWeek(week),
+        capturedAt: new Date().toISOString()
+      };
     }
 
     function renderReportedWeeks(agreementWeeks) {
@@ -2330,7 +2432,8 @@
         const lockBadge = locked ? ' <span class="tag tag-neutral report-lock">Locked</span>' : '';
         const value = function(key) { return report[key] === null || report[key] === undefined ? '' : hours(report[key]); };
         const key = isoDate(week.start);
-        return '<tr><td>Week ' + week.index + lockBadge + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td>' +
+        const comparisonWeek = Object.assign({}, week, { report: report && (report.work !== null || report.coverage !== null || report.adherence !== null) ? report : null });
+        return '<tr><td>Week ' + week.index + lockBadge + reportComparisonNotice(comparisonWeek) + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td>' +
           '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="work" type="number" min="0" step=".01" value="' + value('work') + '" placeholder="—"' + disabled + '></td>' +
           '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="coverage" type="number" min="0" step=".01" value="' + value('coverage') + '" placeholder="—"' + disabled + '></td>' +
           '<td><input class="inline-number report-input" data-report-start="' + key + '" data-report-field="adherence" type="number" min="0" step=".01" value="' + value('adherence') + '" placeholder="—"' + disabled + '></td></tr>';
@@ -2358,7 +2461,17 @@
         if (values.work === null && values.coverage === null && values.adherence === null) {
           reports.delete(key);
         } else {
-          reports.set(key, { index: week.index, start: key, end: isoDate(week.end), work: values.work, coverage: values.coverage, adherence: values.adherence });
+          const existing = reports.get(key);
+          reports.set(key, {
+            index: week.index,
+            start: key,
+            end: isoDate(week.end),
+            work: values.work,
+            coverage: values.coverage,
+            adherence: values.adherence,
+            reportedAt: existing && existing.reportedAt ? existing.reportedAt : new Date().toISOString(),
+            beforeReport: existing && existing.beforeReport ? existing.beforeReport : beforeReportSnapshotForWeek(week)
+          });
         }
       });
       state.reportedWeeks = normalizeReportedWeeks(Array.from(reports.values()));
@@ -2708,7 +2821,7 @@
       updateDashboardView();
 
       document.getElementById('contractWeekRows').innerHTML = officialWeeks.length ? officialWeeks.map(function(week) {
-        return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + officialValueCell(week, 'displayWork', 'workReported') + '</td><td>' + officialValueCell(week, 'displayCoverage', 'coverageReported') + '</td><td>' + officialValueCell(week, 'displayAdherence', 'adherenceReported') + '</td></tr>';
+        return '<tr><td>Week ' + week.index + reportComparisonNotice(week) + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + officialValueCell(week, 'displayWork', 'workReported') + '</td><td>' + officialValueCell(week, 'displayCoverage', 'coverageReported') + '</td><td>' + officialValueCell(week, 'displayAdherence', 'adherenceReported') + '</td></tr>';
       }).join('') : '<tr><td colspan="5"><div class="empty">Set an contract term to show weekly contract totals.</div></td></tr>';
 
       renderContractCalendar(range);
