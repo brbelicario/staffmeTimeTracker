@@ -124,6 +124,7 @@
       color: var(--ink); background: #edf1f6; transition: transform .18s, box-shadow .18s, background .18s;
     }
     .btn:hover { transform: translateY(-1px); box-shadow: 0 7px 16px rgba(24,41,68,.10); }
+    .btn-outline { color: var(--ink); background: #fff; border: 1px solid var(--line); }
     .btn-primary { color: #fff; background: var(--navy); }
     .btn-cyan { color: #fff; background: var(--cyan); }
     .btn-quiet { background: transparent; color: var(--muted); padding-left: 8px; padding-right: 8px; }
@@ -138,7 +139,25 @@
     .dashboard-head h1 { font-size: clamp(2rem, 4vw, 3rem); margin: 11px 0 5px; }
     .profile-line { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
     .profile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
-    .head-actions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+    .head-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+    .dashboard-tool-group {
+      display: flex; align-items: center; gap: 8px; padding: 4px;
+      border: 1px solid var(--line); border-radius: 14px; background: #fff;
+    }
+    .dashboard-tool-group-label {
+      color: var(--muted); font-size: .68rem; font-weight: 900; letter-spacing: .07em;
+      text-transform: uppercase; white-space: nowrap; padding: 0 4px 0 7px;
+    }
+    .dashboard-sync-group {
+      background: #f8fbfd; border-color: rgba(35,168,199,.28);
+    }
+    .dashboard-sync-group .dashboard-tool-group-label { color: var(--cyan); }
+    .dashboard-sync-group .auto-refresh-control {
+      border-color: transparent; background: transparent; padding-left: 6px; padding-right: 6px;
+    }
+    .dashboard-actions-group {
+      border-color: transparent; background: transparent; padding: 0;
+    }
     .refresh-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
     .auto-refresh-control {
       display: flex; align-items: center; gap: 9px; padding: 8px 10px;
@@ -298,7 +317,12 @@
       .shell { width: 92vw; padding-top: 28px; }
       .login-card { padding: 28px 22px; }
       .form-row, .dashboard-head { align-items: stretch; flex-direction: column; }
-      .head-actions { justify-content: flex-start; }
+      .head-actions { justify-content: flex-start; align-items: stretch; }
+      .dashboard-tool-group { width: 100%; max-width: 100%; }
+      .dashboard-sync-group .refresh-actions { flex: 1; min-width: 0; }
+      .dashboard-sync-group .refresh-actions > .btn { flex: 1; }
+      .dashboard-actions-group .dashboard-tool-group-label { padding-left: 0; }
+      .dashboard-actions-group .btn { flex: 1; }
       .metric-grid { grid-template-columns: 1fr; }
       .week-summary { grid-template-columns: 1fr 1fr; }
       .day-grid { grid-template-columns: repeat(3, 1fr); }
@@ -392,23 +416,29 @@
     <section id="dashboardView" hidden>
       <div class="dashboard-head">
         <div>
-          <div class="eyebrow">Work hours overview</div>
-          <h1>Weekly control center</h1>
+          <div class="eyebrow">StaffMe time tracker</div>
+          <h1>Work Hours Dashboard</h1>
           <div class="profile-line"><span class="profile-dot"></span><span id="profileEmail"></span><span>·</span><span id="weekRange"></span></div>
         </div>
         <div class="head-actions">
-          <div class="refresh-actions">
-            <button class="btn" id="refreshBtn" type="button">Refresh StaffMe data</button>
-            <div class="auto-refresh-control" title="Request fresh StaffMe data every 60 seconds">
-              <label class="auto-refresh-label" for="autoRefreshToggle">
-                <input type="checkbox" id="autoRefreshToggle" checked>
-                <span>Auto-refresh</span>
-              </label>
-              <span class="auto-refresh-countdown" id="autoRefreshCountdown" aria-live="polite">In 60s</span>
+          <div class="dashboard-tool-group dashboard-sync-group" aria-label="StaffMe data sync">
+            <span class="dashboard-tool-group-label">Data sync</span>
+            <div class="refresh-actions">
+              <button class="btn btn-primary" id="refreshBtn" type="button">Refresh StaffMe data</button>
+              <div class="auto-refresh-control" title="Request fresh StaffMe data every 60 seconds">
+                <label class="auto-refresh-label" for="autoRefreshToggle">
+                  <input type="checkbox" id="autoRefreshToggle" checked>
+                  <span>Auto-refresh</span>
+                </label>
+                <span class="auto-refresh-countdown" id="autoRefreshCountdown" aria-live="polite">In 60s</span>
+              </div>
             </div>
           </div>
-          <button class="btn" id="manualAddTopBtn">Add manual hours</button>
-          <button class="btn btn-cyan" id="settingsBtn">Schedule settings</button>
+          <div class="dashboard-tool-group dashboard-actions-group" aria-label="Tracker actions">
+            <span class="dashboard-tool-group-label">Actions</span>
+            <button class="btn" id="manualAddTopBtn">Add manual hours</button>
+            <button class="btn btn-outline" id="settingsBtn">Schedule settings</button>
+          </div>
         </div>
       </div>
 
