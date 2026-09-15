@@ -59,23 +59,28 @@
     .brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
     .brand { justify-self: start; }
     .top-navigation {
-      display: flex; align-items: center; justify-content: center; gap: 3px;
-      justify-self: center; flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 4px;
-      border: 1px solid #dbe5ec; border-radius: 16px;
-      background: linear-gradient(180deg, #f5f9fb, #edf3f6);
-      box-shadow: 0 5px 16px rgba(24,41,68,.08);
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      justify-self: center; flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 5px;
+      border: 1px solid #d7e3ea; border-radius: 18px;
+      background: #ffffff; box-shadow: 0 8px 22px rgba(24,41,68,.10);
     }
     .top-navigation .view-tab {
-      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-      min-height: 34px; white-space: nowrap; padding: 8px 13px;
-      color: #657286; font-size: .76rem; font-weight: 850;
+      position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      min-width: 100px; min-height: 36px; white-space: nowrap; padding: 8px 14px;
+      color: #68778b; font-size: .76rem; font-weight: 850; letter-spacing: -.01em;
       transition: color .18s, background .18s, box-shadow .18s, transform .18s;
     }
-    .top-navigation .view-tab:hover { color: var(--navy); background: rgba(255,255,255,.78); }
-    .top-navigation .view-tab.active { color: #fff; background: var(--navy); box-shadow: 0 5px 12px rgba(24,41,68,.18); }
-    .top-navigation .view-tab.active:hover { color: #fff; background: var(--navy-2); }
-    .top-actions { justify-self: end; }
-    .top-actions { display: flex; gap: 9px; align-items: center; }
+    .top-navigation .view-tab:last-child { min-width: 132px; }
+    .top-navigation .view-tab:hover { color: var(--navy); background: #f2f7f9; }
+    .top-navigation .view-tab.active {
+      color: #fff; background: linear-gradient(135deg, var(--navy), var(--navy-2));
+      box-shadow: 0 6px 14px rgba(24,41,68,.20);
+    }
+    .top-navigation .view-tab.active:hover { color: #fff; background: linear-gradient(135deg, var(--navy-2), #3c567b); }
+    .tab-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: 0 0 auto; color: currentColor; opacity: .72; }
+    .tab-icon svg { display: block; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.35; }
+    .top-navigation .view-tab.active .tab-icon { opacity: 1; }
+    .top-actions { display: flex; gap: 9px; align-items: center; justify-self: end; }
     .profile-menu { position: relative; }
     .profile-trigger {
       display: flex; align-items: center; gap: 9px;
@@ -434,7 +439,10 @@
       .top-actions { flex: 0 0 auto; }
       .top-navigation { order: 3; width: 100%; flex: 1 0 100%; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; border-radius: 13px; scroll-snap-type: x proximity; }
       .top-navigation::-webkit-scrollbar { display: none; }
-      .top-navigation .view-tab { flex: 1 0 auto; min-height: 32px; padding: 7px 10px; font-size: .7rem; white-space: nowrap; scroll-snap-align: start; }
+      .top-navigation .view-tab { flex: 1 0 auto; min-width: 0; min-height: 32px; gap: 5px; padding: 7px 9px; font-size: .7rem; white-space: nowrap; scroll-snap-align: start; }
+      .top-navigation .view-tab:last-child { min-width: 0; }
+      .top-navigation .tab-icon { width: 14px; height: 14px; }
+      .top-navigation .tab-icon svg { width: 14px; height: 14px; }
       .shell { width: 92vw; padding-top: 20px; padding-bottom: 42px; }
       .login-card { padding: 28px 22px; }
       .form-row, .dashboard-head { align-items: stretch; flex-direction: column; }
@@ -548,10 +556,10 @@
       <div>StaffMe Time Tracker<small>Hourly work dashboard</small></div>
     </div>
     <nav class="top-navigation" id="topNavigation" hidden role="tablist" aria-label="Tracker views">
-      <button class="view-tab active" id="activeContractTab" type="button" role="tab" aria-selected="true" aria-controls="activeContractView"><span class="tab-label-wide">Active contract</span><span class="tab-label-short">Active</span></button>
-      <button class="view-tab" id="hourlyDataTab" type="button" role="tab" aria-selected="false" aria-controls="hourlyDataView"><span class="tab-label-wide">Hourly data</span><span class="tab-label-short">Hourly</span></button>
-      <button class="view-tab" id="reportsTab" type="button" role="tab" aria-selected="false" aria-controls="reportsView"><span class="tab-label-wide">Reports</span><span class="tab-label-short">Reports</span></button>
-      <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView"><span class="tab-label-wide">Contract history</span><span class="tab-label-short">History</span> <span class="view-tab-count" id="contractHistoryCount">0</span></button>
+      <button class="view-tab active" id="activeContractTab" type="button" role="tab" aria-selected="true" aria-controls="activeContractView"><span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M2.5 2.5h4.2v4.2H2.5zM9.3 2.5h4.2v4.2H9.3zM2.5 9.3h4.2v4.2H2.5zM9.3 9.3h4.2v4.2H9.3z"></path></svg></span><span class="tab-label-wide">Active contract</span><span class="tab-label-short">Active</span></button>
+      <button class="view-tab" id="hourlyDataTab" type="button" role="tab" aria-selected="false" aria-controls="hourlyDataView"><span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M2.5 3.25h11M2.5 6.5h11M2.5 9.75h11M2.5 13h11M3.25 2.5v11M7.75 2.5v11M12.75 2.5v11"></path></svg></span><span class="tab-label-wide">Hourly data</span><span class="tab-label-short">Hourly</span></button>
+      <button class="view-tab" id="reportsTab" type="button" role="tab" aria-selected="false" aria-controls="reportsView"><span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M3 13V8m4 5V5m4 8V3m3 10"></path><path d="M2.5 13.25h11"></path></svg></span><span class="tab-label-wide">Reports</span><span class="tab-label-short">Reports</span></button>
+      <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView"><span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M3 5.5A5.5 5.5 0 1 1 2.7 11"></path><path d="M3 2.5v3h3M8 5.2v3l2 1.2"></path></svg></span><span class="tab-label-wide">Contract history</span><span class="tab-label-short">History</span> <span class="view-tab-count" id="contractHistoryCount">0</span></button>
     </nav>
     <div class="top-actions" id="topActions" hidden>
       <div class="profile-menu" id="profileMenu">
