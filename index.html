@@ -2315,6 +2315,9 @@
         showToast('Set a valid current contract term before starting a new contract.');
         return;
       }
+      const draft = mergeSettings(state.settings);
+      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, draft.pay || {});
+      const days = [0,1,2,3,4,5,6];
       const suggestedStartDate = addDays(current.end, 1);
       const suggestedEndDate = addDays(suggestedStartDate, 29);
       const currentEffectiveEnd = contractEndBoundary(current);
@@ -2324,14 +2327,37 @@
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="newContractBackdrop"><div class="modal">' +
           '<div class="modal-head"><div><div class="eyebrow">Contract history</div><h2>Start a new contract</h2><p class="muted">' + intro + '</p></div><button class="close" id="closeNewContract" type="button">×</button></div>' +
-          '<div class="note"><span>●</span><div><strong>Current contract:</strong> ' + formatDate(current.start) + ' – ' + formatDate(current.end) + '<br><span class="muted">Final shift boundary: ' + formatDateTime(currentEffectiveEnd) + '. Your schedule and payment settings will carry over.</span></div></div>' +
+          '<div class="note"><span>●</span><div><strong>Current contract:</strong> ' + formatDate(current.start) + ' – ' + formatDate(current.end) + '<br><span class="muted">Final shift boundary: ' + formatDateTime(currentEffectiveEnd) + '. The previous contract will remain in Contract History.</span></div></div>' +
           '<form id="newContractForm">' +
             '<div class="field-grid"><div class="field"><label for="newContractStart">New contract starts</label><input id="newContractStart" type="date" value="' + isoDate(suggestedStartDate) + '" required></div><div class="field"><label for="newContractEnd">New contract ends</label><input id="newContractEnd" type="date" value="' + isoDate(suggestedEndDate) + '" required></div></div>' +
             '<div class="field-help">Suggested dates cover 30 calendar days. For overnight duty, the new contract begins at the duty start time on the start date and ends at the next duty start after the displayed end date. Edit either date if your contract uses different dates.</div>' +
+            '<div class="field-grid"><div class="field"><label for="newStartTime">Duty starts</label><input id="newStartTime" type="time" value="' + escapeHtml(draft.start) + '" required></div><div class="field"><label for="newEndTime">Duty ends</label><input id="newEndTime" type="time" value="' + escapeHtml(draft.end) + '" required></div></div>' +
+            '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
+              return '<label class="day-choice"><input type="checkbox" name="newAdherenceDay" value="' + day + '"' + (draft.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
+            }).join('') + '</div><div class="field-help">A shift is classified by its starting day. All other days become coverage days automatically.</div></div>' +
+            '<div class="field-grid"><div class="field"><label for="newWorkTarget">Work Hours target</label><input id="newWorkTarget" type="number" min="0" step=".01" value="' + draft.targets.work + '"></div><div class="field"><label for="newCoverageTarget">InCoverage target</label><input id="newCoverageTarget" type="number" min="0" step=".01" value="' + draft.targets.coverage + '"></div></div>' +
+            '<div class="field"><label for="newWeekendTarget">Weekend adherence target</label><input id="newWeekendTarget" type="number" min="0" step=".01" value="' + draft.targets.weekend + '"></div>' +
+            '<div class="field-grid"><div class="field"><label for="newDailyCap">Daily work cap reminder</label><input id="newDailyCap" type="number" min="0" step=".01" value="' + draft.caps.daily + '"></div><div class="field"><label for="newWeeklyCap">Contract weekly work cap</label><input id="newWeeklyCap" type="number" min="0" step=".01" value="' + draft.caps.weekly + '"></div></div>' +
+            '<div class="field-help">The schedule and payment settings are copied from the previous contract so you only need to change what is different.</div>' +
+            '<div class="week-label settings-section-label">Pay estimate</div>' +
+            '<div class="field-grid"><div class="field"><label for="newMinimumPaidHours">Minimum paid hours</label><input id="newMinimumPaidHours" type="number" min="0" step=".01" value="' + pay.minimumHours + '" required></div><div class="field"><label for="newMinimumFee">Minimum fee (USD)</label><input id="newMinimumFee" type="number" min="0" step=".01" value="' + pay.minimumFee + '" required></div></div>' +
+            '<div class="field-grid"><div class="field"><label for="newExcessRate">Excess/additional hourly rate (USD)</label><input id="newExcessRate" type="number" min="0" step=".01" value="' + pay.excessRate + '" required></div><div class="field"><label for="newUsdToPhp">USD to PHP rate</label><input id="newUsdToPhp" type="number" min="0" step=".01" value="' + pay.usdToPhp + '"' + (pay.exchangeRateMode === 'automatic' ? ' disabled' : '') + ' required></div></div>' +
+            '<div class="field-grid"><div class="field"><label for="newExchangeRateMode">USD to PHP rate source</label><select id="newExchangeRateMode"><option value="automatic"' + (pay.exchangeRateMode === 'automatic' ? ' selected' : '') + '>Automatic (Google Finance)</option><option value="manual"' + (pay.exchangeRateMode === 'manual' ? ' selected' : '') + '>Manual</option></select></div><div class="field-help">Automatic mode updates the USD to PHP rate whenever Auto-refresh runs. The saved rate is used if the service is unavailable.</div></div>' +
             '<div id="newContractError" class="auth-error" hidden></div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelNewContract">Cancel</button><button type="submit" class="btn btn-primary">Archive and start new contract</button></div>' +
           '</form>' +
         '</div></div>';
+
+      const exchangeRateModeControl = document.getElementById('newExchangeRateMode');
+      const usdToPhpControl = document.getElementById('newUsdToPhp');
+      function updateNewExchangeRateInput() {
+        const automatic = exchangeRateModeControl.value === 'automatic';
+        usdToPhpControl.disabled = automatic;
+        usdToPhpControl.title = automatic ? 'This rate is updated automatically from Google Finance.' : '';
+      }
+      exchangeRateModeControl.addEventListener('change', updateNewExchangeRateInput);
+      updateNewExchangeRateInput();
+
       function cancelNewContract() {
         if (prompted) dismissContractPrompt(current);
         closeModal();
@@ -2346,6 +2372,14 @@
         const endValue = document.getElementById('newContractEnd').value;
         const start = parseDate(startValue);
         const end = parseDate(endValue);
+        const dutyStart = document.getElementById('newStartTime').value;
+        const dutyEnd = document.getElementById('newEndTime').value;
+        const selected = Array.from(document.querySelectorAll('input[name="newAdherenceDay"]:checked')).map(function(input) { return Number(input.value); });
+        const minimumPaidHours = numberValue(document.getElementById('newMinimumPaidHours').value);
+        const minimumFee = numberValue(document.getElementById('newMinimumFee').value);
+        const excessRate = numberValue(document.getElementById('newExcessRate').value);
+        const usdToPhp = numberValue(document.getElementById('newUsdToPhp').value);
+        const exchangeRateMode = exchangeRateModeControl.value === 'manual' ? 'manual' : 'automatic';
         if (!start || !end || start > end) {
           errorRoot.textContent = 'Enter a valid new contract date range.';
           errorRoot.hidden = false;
@@ -2353,6 +2387,26 @@
         }
         if (start <= current.end) {
           errorRoot.textContent = 'The new contract must start after the current contract ends.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (parseMinutes(dutyStart) === null || parseMinutes(dutyEnd) === null) {
+          errorRoot.textContent = 'Enter valid duty start and end times.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (!selected.length) {
+          errorRoot.textContent = 'Choose at least one weekend adherence day.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (minimumPaidHours <= 0) {
+          errorRoot.textContent = 'Minimum paid hours must be greater than zero.';
+          errorRoot.hidden = false;
+          return;
+        }
+        if (minimumFee < 0 || excessRate < 0 || usdToPhp <= 0) {
+          errorRoot.textContent = 'Enter valid non-negative pay values and a PHP conversion rate.';
           errorRoot.hidden = false;
           return;
         }
@@ -2368,9 +2422,31 @@
           return;
         }
         state.contracts = normalizeContracts(state.contracts.concat([archived]));
-        state.settings = mergeSettings(state.settings);
-        state.settings.contractStart = isoDate(start);
-        state.settings.contractEnd = isoDate(end);
+        state.settings = mergeSettings({
+          start: dutyStart,
+          end: dutyEnd,
+          contractStart: isoDate(start),
+          contractEnd: isoDate(end),
+          adherenceDays: selected,
+          targets: {
+            work: numberValue(document.getElementById('newWorkTarget').value),
+            coverage: numberValue(document.getElementById('newCoverageTarget').value),
+            weekend: numberValue(document.getElementById('newWeekendTarget').value)
+          },
+          caps: {
+            daily: numberValue(document.getElementById('newDailyCap').value),
+            weekly: numberValue(document.getElementById('newWeeklyCap').value)
+          },
+          pay: {
+            minimumHours: minimumPaidHours,
+            minimumFee: minimumFee,
+            excessRate: excessRate,
+            usdToPhp: usdToPhp,
+            exchangeRateMode: exchangeRateMode,
+            exchangeRateUpdatedAt: exchangeRateMode === 'automatic' ? '' : '',
+            exchangeRateSource: ''
+          }
+        });
         state.rows = [];
         state.manualEntries = [];
         state.reportedWeeks = [];
@@ -2383,6 +2459,7 @@
         queueRemoteSave();
         closeModal();
         render();
+        startExchangeRateRefresh();
         showToast('New contract started. Previous contract data was archived.');
       });
     }
