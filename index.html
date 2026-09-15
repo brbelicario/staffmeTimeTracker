@@ -136,14 +136,14 @@
       color: #526176; background: #f5f8fb; font-size: .87rem; line-height: 1.5;
     }
     .note strong { color: var(--ink); }
-    .dashboard-head { display: flex; flex-direction: column; gap: 14px; align-items: stretch; margin-bottom: 22px; }
+    .dashboard-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px 24px; align-items: start; margin-bottom: 22px; }
     .dashboard-head > div:first-child { min-width: 0; }
     .dashboard-head h1 { font-size: clamp(2.2rem, 3.8vw, 3rem); margin: 8px 0 5px; white-space: nowrap; }
     .dashboard-eyebrow { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
     .unofficial-badge { display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: #edf1f6; font-size: .62rem; letter-spacing: .06em; }
-    .profile-line { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
+    .profile-line { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; white-space: nowrap; }
     .profile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
-    .head-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: flex-start; align-items: center; max-width: 100%; }
+    .head-actions { display: flex; flex-direction: column; gap: 10px; justify-content: flex-start; align-items: stretch; max-width: 100%; }
     .dashboard-tool-group {
       display: flex; align-items: center; gap: 8px; padding: 4px;
       border: 1px solid var(--line); border-radius: 14px; background: #fff;
@@ -154,6 +154,7 @@
     }
     .dashboard-sync-group {
       background: #f8fbfd; border-color: rgba(35,168,199,.28);
+      align-self: flex-end;
     }
     .dashboard-sync-group .dashboard-tool-group-label { color: var(--cyan); }
     .dashboard-sync-group .auto-refresh-control {
@@ -161,7 +162,7 @@
     }
     .dashboard-actions-group {
       border-color: transparent; background: transparent; padding: 0;
-      white-space: nowrap;
+      justify-content: flex-end; white-space: nowrap;
     }
     .refresh-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
     .auto-refresh-control {
@@ -351,7 +352,11 @@
       .content-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 1050px) {
+      .dashboard-head { display: flex; flex-direction: column; align-items: stretch; }
       .dashboard-head h1 { white-space: normal; }
+      .profile-line { white-space: normal; }
+      .head-actions { align-items: stretch; }
+      .dashboard-sync-group { align-self: stretch; }
     }
     @media (max-width: 680px) {
       .topbar { padding: 0 4vw; }
