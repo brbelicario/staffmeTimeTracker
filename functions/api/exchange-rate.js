@@ -46,8 +46,14 @@ export async function onRequestGet({ env }) {
   }
 
   try {
-    const response = await fetch(endpointUrl.toString(), {
-      headers: { Accept: 'application/json' }
+    const upstreamUrl = new URL(endpointUrl.toString());
+    upstreamUrl.searchParams.set('_refresh', String(Date.now()));
+    const response = await fetch(upstreamUrl.toString(), {
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache'
+      }
     });
     const text = await response.text();
     let body = {};
