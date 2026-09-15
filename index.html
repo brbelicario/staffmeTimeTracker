@@ -926,7 +926,7 @@
 
       const request = (async function() {
         try {
-          const response = await fetch('/api/exchange-rate', { cache: 'no-store' });
+          const response = await fetch('/api/exchange-rate?refresh=' + encodeURIComponent(String(Date.now())), { cache: 'no-store' });
           const result = await response.json().catch(function() { return {}; });
           if (state.email !== requestEmail) return;
           if (response.status === 503 && result && result.configured === false) {
@@ -963,7 +963,6 @@
     function stopExchangeRateRefresh() {
       window.clearInterval(exchangeRateTimer);
       exchangeRateTimer = null;
-      exchangeRateRequest = null;
     }
 
     function startExchangeRateRefresh() {
@@ -973,13 +972,6 @@
         return;
       }
       refreshExchangeRate(false);
-      exchangeRateTimer = window.setInterval(function() {
-        if (!state.email || exchangeRateMode() === 'manual') {
-          stopExchangeRateRefresh();
-          return;
-        }
-        refreshExchangeRate(false);
-      }, EXCHANGE_RATE_REFRESH_INTERVAL_MS);
     }
 
     function renderPayEstimate(workHours) {
@@ -2265,7 +2257,7 @@
             '<div class="week-label settings-section-label">Pay estimate</div>' +
             '<div class="field-grid"><div class="field"><label for="minimumPaidHours">Minimum paid hours</label><input id="minimumPaidHours" type="number" min="0" step=".01" value="' + pay.minimumHours + '" required></div><div class="field"><label for="minimumFee">Minimum fee (USD)</label><input id="minimumFee" type="number" min="0" step=".01" value="' + pay.minimumFee + '" required></div></div>' +
             '<div class="field-grid"><div class="field"><label for="excessRate">Excess/additional hourly rate (USD)</label><input id="excessRate" type="number" min="0" step=".01" value="' + pay.excessRate + '" required></div><div class="field"><label for="usdToPhp">USD to PHP rate</label><input id="usdToPhp" type="number" min="0" step=".01" value="' + pay.usdToPhp + '"' + (payMode === 'automatic' ? ' disabled' : '') + ' required></div></div>' +
-            '<div class="field-grid"><div class="field"><label for="exchangeRateMode">USD to PHP rate source</label><select id="exchangeRateMode"><option value="automatic"' + (payMode === 'automatic' ? ' selected' : '') + '>Automatic (Google Finance)</option><option value="manual"' + (payMode === 'manual' ? ' selected' : '') + '>Manual</option></select></div><div class="field-help">Automatic mode refreshes about once per hour through the one-time Google Finance setup. The saved fallback rate is used if the service is unavailable.</div></div>' +
+            '<div class="field-grid"><div class="field"><label for="exchangeRateMode">USD to PHP rate source</label><select id="exchangeRateMode"><option value="automatic"' + (payMode === 'automatic' ? ' selected' : '') + '>Automatic (Google Finance)</option><option value="manual"' + (payMode === 'manual' ? ' selected' : '') + '>Manual</option></select></div><div class="field-help">Automatic mode updates the USD to PHP rate whenever Auto-refresh runs. The saved rate is used if the service is unavailable.</div></div>' +
             '<div class="field-help">Example: 180 hours = $360 minimum. Every hour above 180 earns $2. The fallback rate is only used when automatic mode cannot update.</div>' +
             '<div class="modal-actions"><button type="button" class="btn btn-quiet" id="newContractBtn">New contract</button><span class="modal-spacer"></span><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
           '</form>' +
@@ -2481,12 +2473,24 @@
     }
 
     function stopAutoRefresh() {
-      window.clearInterval(autoRefreshTimer);
+      window.clearTimeout(autoRefreshTimer);
       window.clearInterval(autoRefreshCountdownTimer);
       autoRefreshTimer = null;
       autoRefreshCountdownTimer = null;
       autoRefreshRemaining = 60;
       updateAutoRefreshControls();
+    }
+
+    function scheduleAutoRefresh() {
+      window.clearTimeout(autoRefreshTimer);
+      autoRefreshTimer = null;
+      if (!state.email || state.autoRefresh === false) return;
+      autoRefreshTimer = window.setTimeout(function() {
+        autoRefreshTimer = null;
+        if (!state.email || state.autoRefresh === false) return;
+        refreshStaffMeData(false);
+        scheduleAutoRefresh();
+      }, AUTO_REFRESH_INTERVAL_MS);
     }
 
     function startAutoRefresh() {
@@ -2502,21 +2506,28 @@
         updateAutoRefreshControls();
       }, 1000);
 
-      autoRefreshTimer = window.setInterval(function() {
-        if (!state.email || state.autoRefresh === false) return;
-        refreshStaffMeData(false);
-      }, AUTO_REFRESH_INTERVAL_MS);
+      scheduleAutoRefresh();
       updateAutoRefreshControls();
     }
 
     function refreshStaffMeData(showMessage) {
       if (!state.email) return;
       requestStaffMeRows();
+      // A data refresh must also force a new exchange-rate request.
       refreshExchangeRate(true);
       autoRefreshRemaining = 60;
       updateAutoRefreshControls();
       if (showMessage) showToast('Requesting the latest StaffMe rows...');
     }
+
+    function refreshWhenVisible() {
+      if (document.visibilityState !== 'visible' || !state.email || state.autoRefresh === false) return;
+      startAutoRefresh();
+      refreshStaffMeData(false);
+    }
+
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
 
     document.getElementById('refreshBtn').addEventListener('click', function() {
       refreshStaffMeData(true);
