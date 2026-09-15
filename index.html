@@ -1649,6 +1649,9 @@
         ].map(function(item) {
           return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong><small>' + item[2] + '</small></div>';
         }).join('');
+      } else {
+        document.getElementById('contractAverage').innerHTML = '<div class="empty">Set an agreement term to calculate current averages.</div>';
+      }
 
       renderContractHistory();
 
