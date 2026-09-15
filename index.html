@@ -682,7 +682,8 @@
       remoteReady: false,
       user: null,
       exchangeRateStatus: 'idle',
-      exchangeRateError: ''
+      exchangeRateError: '',
+      contractPromptDismissedKey: ''
     };
 
     let remoteSaveTimer = null;
@@ -693,6 +694,8 @@
     let autoRefreshTimer = null;
     let autoRefreshCountdownTimer = null;
     let autoRefreshRemaining = 60;
+    let contractEndTimer = null;
+    let contractPromptShownKey = '';
 
     function profileKey(email) {
       return 'staffme-tracker:' + email.trim().toLowerCase();
@@ -707,7 +710,8 @@
         contracts: state.contracts,
         source: state.source,
         lastSync: state.lastSync,
-        autoRefresh: state.autoRefresh !== false
+        autoRefresh: state.autoRefresh !== false,
+        contractPromptDismissedKey: state.contractPromptDismissedKey || ''
       }));
     }
 
@@ -805,6 +809,7 @@
         state.helperStatus = null;
         state.exchangeRateStatus = 'idle';
         state.exchangeRateError = '';
+        state.contractPromptDismissedKey = String(saved.contractPromptDismissedKey || '');
         if (isDemoProfile) saveProfile();
         return true;
       } catch (error) {
@@ -833,6 +838,39 @@
       return { invalid: false, start: start, end: end };
     }
 
+    function addDays(date, amount) {
+      const result = new Date(date);
+      result.setDate(result.getDate() + amount);
+      return result;
+    }
+
+    function dutyStartMinutes() {
+      const start = parseMinutes(state.settings.start);
+      return start === null ? 0 : start;
+    }
+
+    function setLocalMinutes(date, minutes) {
+      const result = new Date(date);
+      result.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+      return result;
+    }
+
+    function contractStartBoundary(range) {
+      return setLocalMinutes(range.start, dutyStartMinutes());
+    }
+
+    function contractEndBoundary(range) {
+      return setLocalMinutes(addDays(range.end, 1), dutyStartMinutes());
+    }
+
+    function contractHasEnded(range) {
+      return Boolean(range && !range.invalid && new Date() >= contractEndBoundary(range));
+    }
+
+    function contractKey(range) {
+      return range && !range.invalid ? isoDate(range.start) + '|' + isoDate(range.end) : '';
+    }
+
     function dateInRange(date, range) {
       return Boolean(range && !range.invalid && date >= range.start && date <= range.end);
     }
@@ -847,13 +885,15 @@
 
       trackedItems().forEach(function(item) {
         const date = item.date;
-        if (!date || (range && !dateInRange(date, range))) return;
+        const contractDate = contractDateForItem(item);
+        if (!date || (range && !dateInRange(contractDate, range))) return;
+        const groupDate = contractDate || date;
         const metrics = itemMetrics(item);
-        const key = isoDate(date);
+        const key = isoDate(groupDate);
         work += metrics.value;
         if (!groups.has(key)) {
           groups.set(key, {
-            date: date,
+            date: groupDate,
             total: 0,
             coverage: 0,
             adherence: 0,
@@ -1034,7 +1074,7 @@
           manualOutside: 0
         };
         trackedItems().forEach(function(item) {
-          const date = item.date;
+          const date = contractDateForItem(item);
           if (!date || date < week.start || date > week.end) return;
           const metrics = itemMetrics(item);
           week.work += metrics.value;
@@ -1074,8 +1114,9 @@
       if (!cap) return [];
       const map = new Map();
       trackedItems().forEach(function(item) {
-        if (range && (range.invalid || !dateInRange(item.date, range))) return;
-        const key = isoDate(item.date);
+        const date = contractDateForItem(item);
+        if (!date || (range && (range.invalid || !dateInRange(date, range)))) return;
+        const key = isoDate(date);
         map.set(key, (map.get(key) || 0) + item.value);
       });
       return Array.from(map.entries()).map(function(entry) {
@@ -1177,6 +1218,18 @@
       const date = parseDate(value);
       if (!date) return String(value || '—');
       return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    function formatDateTime(value) {
+      const date = value instanceof Date ? new Date(value) : new Date(value);
+      if (Number.isNaN(date.getTime())) return '—';
+      return date.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
     }
 
     function weekDateRange(start, end) {
@@ -1345,6 +1398,7 @@
             coverage: Math.max(0, numberValue(totals.coverage)),
             adherence: Math.max(0, numberValue(totals.adherence))
           },
+          effectiveEndAt: String(contract && contract.effectiveEndAt || ''),
           archivedAt: String(contract && contract.archivedAt || '')
         };
       }).filter(Boolean).sort(function(a, b) {
@@ -1370,6 +1424,7 @@
           manualEntries: mergeManualEntries(local.manualEntries, remote.manualEntries),
           reportedWeeks: mergeReportedWeeks(local.reportedWeeks, remote.reportedWeeks),
           totals: remote.totals.work || remote.totals.coverage || remote.totals.adherence ? remote.totals : local.totals,
+          effectiveEndAt: remote.effectiveEndAt || local.effectiveEndAt,
           archivedAt: remote.archivedAt || local.archivedAt
         });
       });
@@ -1380,15 +1435,25 @@
       const range = contractRange();
       if (!range || range.invalid) return null;
       const official = summarizeOfficialWeeks(officialAgreementWeeks(range));
+      const rows = normalizeRows(state.rows).filter(function(row) {
+        return dateInRange(contractDateForRow(row), range);
+      });
+      const manualEntries = normalizeManualEntries(state.manualEntries).filter(function(entry) {
+        return dateInRange(parseDate(entry.date), range);
+      });
+      const reportedWeeks = normalizeReportedWeeks(state.reportedWeeks).filter(function(report) {
+        return dateInRange(parseDate(report.start), range);
+      });
       return {
         id: makeId('contract'),
         start: isoDate(range.start),
         end: isoDate(range.end),
         settings: mergeSettings(state.settings),
-        rows: normalizeRows(state.rows),
-        manualEntries: normalizeManualEntries(state.manualEntries),
-        reportedWeeks: normalizeReportedWeeks(state.reportedWeeks),
+        rows: rows,
+        manualEntries: manualEntries,
+        reportedWeeks: reportedWeeks,
         totals: official,
+        effectiveEndAt: contractEndBoundary(range).toISOString(),
         archivedAt: new Date().toISOString()
       };
     }
@@ -1471,6 +1536,20 @@
       return date;
     }
 
+    function contractDateForRow(row) {
+      const date = calendarDateFor(row);
+      const start = parseMinutes(state.settings.start);
+      const end = parseMinutes(state.settings.end);
+      const time = parseMinutes(row && row.time);
+      if (!date || start === null || end === null || time === null) return date;
+      if (end < start && time < start) date.setDate(date.getDate() - 1);
+      return date;
+    }
+
+    function contractDateForItem(item) {
+      return item && (item.contractDate || item.date);
+    }
+
     function withinDutyWindow(row) {
       const start = parseMinutes(state.settings.start);
       const end = parseMinutes(state.settings.end);
@@ -1548,15 +1627,17 @@
       const items = [];
       state.rows.forEach(function(row) {
         const date = calendarDateFor(row);
+        const contractDate = contractDateForRow(row) || date;
         if (!date) return;
         const coverage = withinDutyWindow(row);
         items.push({
           source: 'staffme',
           key: 'staffme:' + rowKey(row),
           date: date,
+          contractDate: contractDate,
           value: Math.max(0, Number(row.workedHours || 0)),
           coverage: coverage ? Math.max(0, Number(row.workedHours || 0)) : 0,
-          adherence: coverage && categoryFor(date) === 'adherence' ? Math.max(0, Number(row.workedHours || 0)) : 0,
+          adherence: coverage && categoryFor(contractDate) === 'adherence' ? Math.max(0, Number(row.workedHours || 0)) : 0,
           row: row
         });
       });
@@ -1568,6 +1649,7 @@
           source: 'manual',
           key: 'manual:' + entry.id,
           date: date,
+          contractDate: date,
           value: Math.max(0, Number(entry.hours || 0)),
           coverage: Math.max(0, Number(entry.coverageHours || 0)),
           adherence: Math.max(0, Number(entry.adherenceHours || 0)),
@@ -1586,7 +1668,7 @@
       let weekend = 0;
 
       trackedItems().forEach(function(item) {
-        const date = item.date;
+        const date = contractDateForItem(item);
         if (!date || (range && (range.invalid || !dateInRange(date, range))) || !isInWeek(date, start)) return;
         const metrics = itemMetrics(item);
         const key = isoDate(date);
@@ -2352,6 +2434,7 @@
         state.helperStatus = null;
         state.exchangeRateStatus = 'idle';
         state.exchangeRateError = '';
+        state.contractPromptDismissedKey = '';
         saveProfile();
       }
       state.remoteReady = false;
