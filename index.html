@@ -2512,6 +2512,7 @@
     function refreshStaffMeData(showMessage) {
       if (!state.email) return;
       requestStaffMeRows();
+      refreshExchangeRate(Boolean(showMessage));
       autoRefreshRemaining = 60;
       updateAutoRefreshControls();
       if (showMessage) showToast('Requesting the latest StaffMe rows...');
