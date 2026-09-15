@@ -1946,6 +1946,10 @@
         return;
       }
       saveDashboardScrollPosition(dashboardView);
+      if (nextView === 'hourly') {
+        hourlySelectedWeek = currentHourlyWeekIndex(contractRange());
+        hourlyPage = 1;
+      }
       dashboardView = nextView;
       renderContractHistory();
       updateDashboardView();
@@ -2489,6 +2493,17 @@
       const today = new Date();
       today.setHours(12, 0, 0, 0);
       return today;
+    }
+
+    function currentHourlyWeekIndex(range) {
+      const weeks = hourlyWeekRanges(range);
+      const today = localToday();
+      const current = weeks.find(function(week) {
+        return week.exists && today >= week.start && today <= week.end;
+      });
+      if (current) return current.index;
+      const latestStarted = weeks.filter(function(week) { return week.exists && today >= week.start; }).pop();
+      return latestStarted ? latestStarted.index : 1;
     }
 
     function hourlyWeekRows(week) {
