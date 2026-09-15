@@ -187,6 +187,11 @@
     .sync-banner strong { font-size: .91rem; }
     .sync-banner span { display: block; color: #b8c8dc; font-size: .8rem; margin-top: 3px; }
     .sync-status { white-space: nowrap; padding: 8px 11px; border-radius: 999px; color: #c8f4e2; background: rgba(46,148,109,.22); font-size: .76rem; font-weight: 800; }
+    .contract-notice { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 16px; padding: 13px 15px; border: 1px solid #f0c98d; border-radius: 15px; background: #fff8ec; color: #76552b; }
+    .contract-notice-copy { display: grid; gap: 3px; min-width: 0; }
+    .contract-notice-copy strong { color: #553d1e; font-size: .87rem; }
+    .contract-notice-copy span { font-size: .77rem; line-height: 1.4; }
+    .contract-notice .btn { flex: 0 0 auto; color: #fff; background: #9b6a2d; }
     .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     .metric-card, .panel {
       background: var(--panel); border: 1px solid var(--line); border-radius: 19px; box-shadow: 0 8px 23px rgba(24,41,68,.035);
@@ -382,6 +387,8 @@
       .dashboard-actions-group .dashboard-tool-group-label { padding-left: 3px; }
       .dashboard-actions-group .btn { flex: none; min-width: 0; width: 100%; padding: 9px 7px; font-size: .76rem; }
       .sync-banner { align-items: center; flex-direction: row; gap: 8px; padding: 10px 11px; border-radius: 13px; margin-bottom: 12px; }
+      .contract-notice { align-items: stretch; flex-direction: column; gap: 9px; margin-bottom: 12px; padding: 11px 12px; }
+      .contract-notice .btn { width: 100%; }
       .sync-banner > div:first-child { min-width: 0; }
       .sync-banner strong { font-size: .78rem; }
       .sync-banner span { font-size: .68rem; line-height: 1.3; margin-top: 2px; }
@@ -558,6 +565,8 @@
         <div><strong id="syncTitle">Waiting for StaffMe hourly data</strong><span id="syncDetail">Keep the StaffMe Hourly AHT table open, then refresh this dashboard.</span></div>
         <div class="sync-status" id="syncStatus">WAITING</div>
       </div>
+
+      <div class="contract-notice" id="contractNotice" hidden></div>
 
       <div class="metric-grid" id="metricGrid"></div>
 
@@ -2131,8 +2140,9 @@
       document.getElementById('rowCount').textContent = state.rows.length + ' rows';
       document.getElementById('hourRows').innerHTML = preview.length ? preview.map(function(row) {
         const calendarDate = calendarDateFor(row);
+        const shiftDate = contractDateForRow(row);
         const inDuty = withinDutyWindow(row);
-        const adherence = Boolean(calendarDate && categoryFor(calendarDate) === 'adherence');
+        const adherence = Boolean(shiftDate && categoryFor(shiftDate) === 'adherence');
         const badges = !inDuty
           ? '<span class="tag tag-neutral">Outside duty</span>'
           : (adherence ? '<span class="tag tag-adherence">Weekend adherence</span>' : '') +
@@ -2140,6 +2150,10 @@
         return '<tr><td>' + formatDate(row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td><div class="row-badges">' + badges + '</div></td></tr>';
       }).join('') : '<tr><td colspan="4"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
     }
+
+       renderContractStatus(range);
+       scheduleContractEndPrompt(range);
+     }
 
     function showToast(message) {
       const root = document.getElementById('toastRoot');
@@ -2248,30 +2262,84 @@
       });
     }
 
-    function openNewContract() {
+    function dismissContractPrompt(range) {
+      if (!range || range.invalid) return;
+      state.contractPromptDismissedKey = contractKey(range);
+      saveProfile();
+    }
+
+    function maybePromptForEndedContract() {
+      const range = contractRange();
+      if (!state.email || !range || range.invalid || !contractHasEnded(range) || !state.remoteReady) return;
+      const key = contractKey(range);
+      const modalRoot = document.getElementById('modalRoot');
+      if (state.contractPromptDismissedKey === key || contractPromptShownKey === key || (modalRoot && modalRoot.firstElementChild)) return;
+      contractPromptShownKey = key;
+      openNewContract({ prompted: true });
+    }
+
+    function scheduleContractEndPrompt(range) {
+      window.clearTimeout(contractEndTimer);
+      contractEndTimer = null;
+      if (!state.email || !range || range.invalid) return;
+      const key = contractKey(range);
+      if (state.contractPromptDismissedKey === key || contractPromptShownKey === key) return;
+      const delay = contractEndBoundary(range).getTime() - Date.now();
+      if (delay <= 0) {
+        window.setTimeout(maybePromptForEndedContract, 0);
+        return;
+      }
+      contractEndTimer = window.setTimeout(maybePromptForEndedContract, Math.min(delay, 2147483647));
+    }
+
+    function renderContractStatus(range) {
+      const root = document.getElementById('contractNotice');
+      if (!root) return;
+      if (!range || range.invalid || !contractHasEnded(range)) {
+        root.hidden = true;
+        root.innerHTML = '';
+        return;
+      }
+      root.hidden = false;
+      root.innerHTML =
+        '<div class="contract-notice-copy"><strong>Current contract ended</strong><span>Final shift boundary: ' + escapeHtml(formatDateTime(contractEndBoundary(range))) + '. Start a new contract when you are ready.</span></div>' +
+        '<button class="btn" type="button" id="contractNoticeBtn">Start new contract</button>';
+      document.getElementById('contractNoticeBtn').addEventListener('click', function() {
+        openNewContract();
+      });
+    }
+
+    function openNewContract(options) {
+      const prompted = Boolean(options && options.prompted);
       const current = contractRange();
       if (!current || current.invalid) {
         showToast('Set a valid current contract term before starting a new contract.');
         return;
       }
-      const suggestedStartDate = new Date(current.end);
-      suggestedStartDate.setDate(suggestedStartDate.getDate() + 1);
-      const suggestedEndDate = new Date(suggestedStartDate);
-      suggestedEndDate.setDate(suggestedEndDate.getDate() + 29);
+      const suggestedStartDate = addDays(current.end, 1);
+      const suggestedEndDate = addDays(suggestedStartDate, 29);
+      const currentEffectiveEnd = contractEndBoundary(current);
+      const intro = prompted
+        ? 'Your contract has reached its final shift boundary. Review the suggested next contract before saving.'
+        : 'The current contract will be archived with its StaffMe rows, manual hours, and reported weekly metrics.';
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="newContractBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">Contract history</div><h2>Start a new contract</h2><p class="muted">The current contract will be archived with its StaffMe rows, manual hours, and reported weekly metrics.</p></div><button class="close" id="closeNewContract" type="button">×</button></div>' +
-          '<div class="note"><span>●</span><div><strong>Current contract:</strong> ' + formatDate(current.start) + ' – ' + formatDate(current.end) + '<br><span class="muted">Your duty schedule and targets will carry over to the new contract.</span></div></div>' +
+          '<div class="modal-head"><div><div class="eyebrow">Contract history</div><h2>Start a new contract</h2><p class="muted">' + intro + '</p></div><button class="close" id="closeNewContract" type="button">×</button></div>' +
+          '<div class="note"><span>●</span><div><strong>Current contract:</strong> ' + formatDate(current.start) + ' – ' + formatDate(current.end) + '<br><span class="muted">Final shift boundary: ' + formatDateTime(currentEffectiveEnd) + '. Your schedule and payment settings will carry over.</span></div></div>' +
           '<form id="newContractForm">' +
             '<div class="field-grid"><div class="field"><label for="newContractStart">New contract starts</label><input id="newContractStart" type="date" value="' + isoDate(suggestedStartDate) + '" required></div><div class="field"><label for="newContractEnd">New contract ends</label><input id="newContractEnd" type="date" value="' + isoDate(suggestedEndDate) + '" required></div></div>' +
-            '<div class="field-help">Use the dates written in your new contract. Weeks will start from the new contract start date.</div>' +
+            '<div class="field-help">Suggested dates cover 30 calendar days. For overnight duty, the new contract begins at the duty start time on the start date and ends at the next duty start after the displayed end date. Edit either date if your contract uses different dates.</div>' +
             '<div id="newContractError" class="auth-error" hidden></div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelNewContract">Cancel</button><button type="submit" class="btn btn-primary">Archive and start new contract</button></div>' +
           '</form>' +
         '</div></div>';
-      document.getElementById('closeNewContract').addEventListener('click', closeModal);
-      document.getElementById('cancelNewContract').addEventListener('click', closeModal);
-      document.getElementById('newContractBackdrop').addEventListener('click', function(event) { if (event.target.id === 'newContractBackdrop') closeModal(); });
+      function cancelNewContract() {
+        if (prompted) dismissContractPrompt(current);
+        closeModal();
+      }
+      document.getElementById('closeNewContract').addEventListener('click', cancelNewContract);
+      document.getElementById('cancelNewContract').addEventListener('click', cancelNewContract);
+      document.getElementById('newContractBackdrop').addEventListener('click', function(event) { if (event.target.id === 'newContractBackdrop') cancelNewContract(); });
       document.getElementById('newContractForm').addEventListener('submit', function(event) {
         event.preventDefault();
         const errorRoot = document.getElementById('newContractError');
@@ -2310,6 +2378,8 @@
         state.source = 'waiting';
         state.lastSync = null;
         state.helperStatus = null;
+        state.contractPromptDismissedKey = '';
+        contractPromptShownKey = '';
         saveProfile();
         queueRemoteSave();
         closeModal();
@@ -2327,7 +2397,7 @@
           '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Tracker Settings</h2></div><button class="close" id="closeModal">×</button></div>' +
           '<form id="settingsForm">' +
             '<div class="field-grid"><div class="field"><label for="contractStart">Contract start date</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Contract end date</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
-            '<div class="field-help">These contract dates are inclusive. To start a different contract without losing this one, use New contract below.</div>' +
+            '<div class="field-help">These dates are inclusive shift-start dates. For overnight duty, the effective end is the next duty start after the displayed end date. To start a different contract without losing this one, use New contract below.</div>' +
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
@@ -2527,6 +2597,10 @@
       state.remoteStatus = 'unknown';
       stopAutoRefresh();
       stopExchangeRateRefresh();
+      window.clearTimeout(contractEndTimer);
+      contractEndTimer = null;
+      contractPromptShownKey = '';
+      state.contractPromptDismissedKey = '';
       state.exchangeRateStatus = 'idle';
       state.exchangeRateError = '';
       closeModal();
