@@ -136,14 +136,14 @@
       color: #526176; background: #f5f8fb; font-size: .87rem; line-height: 1.5;
     }
     .note strong { color: var(--ink); }
-    .dashboard-head { display: flex; justify-content: space-between; gap: 24px; align-items: center; margin-bottom: 22px; }
-    .dashboard-head > div:first-child { min-width: 0; flex: 1 1 auto; }
-    .dashboard-head h1 { font-size: clamp(2rem, 3.4vw, 2.7rem); margin: 8px 0 5px; white-space: nowrap; }
+    .dashboard-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px 24px; align-items: start; margin-bottom: 22px; }
+    .dashboard-head > div:first-child { min-width: 0; }
+    .dashboard-head h1 { font-size: clamp(2rem, 3.2vw, 2.7rem); margin: 8px 0 5px; white-space: normal; }
     .dashboard-eyebrow { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
     .unofficial-badge { display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: #edf1f6; font-size: .62rem; letter-spacing: .06em; }
     .profile-line { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
     .profile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
-    .head-actions { display: flex; flex: 0 0 auto; gap: 12px; flex-wrap: nowrap; justify-content: flex-end; align-items: center; }
+    .head-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: flex-end; align-items: center; max-width: 100%; }
     .dashboard-tool-group {
       display: flex; align-items: center; gap: 8px; padding: 4px;
       border: 1px solid var(--line); border-radius: 14px; background: #fff;
@@ -163,7 +163,7 @@
       border-color: transparent; background: transparent; padding: 0;
       white-space: nowrap;
     }
-    .refresh-actions { display: flex; gap: 9px; align-items: center; flex-wrap: nowrap; }
+    .refresh-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
     .auto-refresh-control {
       display: flex; align-items: center; gap: 9px; padding: 8px 10px;
       border: 1px solid var(--line); border-radius: 11px; background: #fff;
