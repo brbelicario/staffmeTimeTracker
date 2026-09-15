@@ -536,7 +536,7 @@
           <div class="dashboard-tool-group dashboard-sync-group" aria-label="StaffMe data sync">
             <span class="dashboard-tool-group-label">Data sync</span>
             <div class="refresh-actions">
-              <button class="btn btn-primary" id="refreshBtn" type="button">Refresh StaffMe data</button>
+              <button class="btn btn-primary" id="refreshBtn" type="button">Refresh data</button>
               <div class="auto-refresh-control" title="Request fresh StaffMe data every 60 seconds">
                 <label class="auto-refresh-label" for="autoRefreshToggle">
                   <input type="checkbox" id="autoRefreshToggle" checked>
@@ -1948,10 +1948,10 @@
           ? state.rows.length + ' hourly rows received from StaffMe. Last sync ' + new Date(state.lastSync).toLocaleString() + '.'
           : state.rows.length + ' hourly rows are stored in this browser.')
         : (tableFound && parsedRows === 0
-          ? 'The helper is running, but the table structure needs adjustment. Click Refresh StaffMe data after reloading the helper.'
+          ? 'The helper is running, but the table structure needs adjustment. Click Refresh data after reloading the helper.'
           : state.helperStatus
             ? 'The helper responded, but no StaffMe table was detected yet. Keep the Hourly AHT table open, then refresh.'
-            : 'The helper has not responded. Reload the extension, keep StaffMe open, then click Refresh StaffMe data.');
+            : 'The helper has not responded. Reload the extension, keep StaffMe open, then click Refresh data.');
       const remoteDetail = state.remoteStatus === 'synced'
         ? ' Cloud copy is available on other devices.'
         : state.remoteStatus === 'local-only'
