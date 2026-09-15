@@ -192,6 +192,43 @@
     .contract-notice-copy strong { color: #553d1e; font-size: .87rem; }
     .contract-notice-copy span { font-size: .77rem; line-height: 1.4; }
     .contract-notice .btn { flex: 0 0 auto; color: #fff; background: #9b6a2d; }
+    .view-tabs { display: flex; gap: 6px; margin: 0 0 16px; padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.76); width: fit-content; }
+    .view-tab { border: 0; background: transparent; color: var(--muted); border-radius: 10px; padding: 9px 13px; font-size: .78rem; font-weight: 850; }
+    .view-tab:hover { color: var(--ink); background: #f3f6f9; }
+    .view-tab.active { color: #fff; background: var(--navy); }
+    .view-tab-count { margin-left: 4px; opacity: .72; font-size: .7rem; }
+    .history-view { margin-top: 0; }
+    .history-panel { min-height: 220px; }
+    .history-group-label { margin: 3px 0 9px; color: var(--cyan); font-size: .75rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .history-group-label:not(:first-child) { margin-top: 22px; }
+    .history-list { display: grid; gap: 11px; }
+    .contract-card { width: 100%; display: block; border: 1px solid var(--line); border-radius: 16px; padding: 15px; background: #fbfcfe; color: var(--ink); text-align: left; transition: border .18s, box-shadow .18s, transform .18s; }
+    .contract-card:hover { border-color: rgba(35,168,199,.62); box-shadow: 0 8px 20px rgba(24,41,68,.07); transform: translateY(-1px); }
+    .contract-card:focus-visible, .view-tab:focus-visible { outline: 3px solid rgba(35,168,199,.25); outline-offset: 2px; }
+    .contract-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .contract-card-title { font-size: .98rem; font-weight: 900; letter-spacing: -.02em; }
+    .contract-card-subtitle { margin-top: 3px; color: var(--muted); font-size: .73rem; }
+    .contract-card-link { flex: 0 0 auto; color: var(--cyan); font-size: .73rem; font-weight: 850; }
+    .contract-status { display: inline-flex; align-items: center; margin-top: 8px; padding: 4px 8px; border-radius: 999px; font-size: .68rem; font-weight: 900; }
+    .contract-status.active { color: #1d7150; background: var(--green-soft); }
+    .contract-status.ended { color: #865b2c; background: #fff0dc; }
+    .contract-card-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 13px; }
+    .contract-card-stat { padding: 9px 10px; border-radius: 11px; background: #f1f5f9; }
+    .contract-card-stat span, .contract-card-pay span { display: block; color: var(--muted); font-size: .68rem; }
+    .contract-card-stat strong { display: block; margin-top: 4px; font-size: .94rem; }
+    .contract-card-pay { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 12px; padding-top: 11px; border-top: 1px solid #edf0f4; }
+    .contract-card-pay strong { font-size: 1rem; }
+    .contract-card-pay em { margin-left: 7px; color: var(--green); font-size: .82rem; font-style: normal; }
+    .contract-card-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; color: var(--muted); font-size: .71rem; line-height: 1.35; }
+    .history-empty { padding: 30px 12px; border: 1px dashed #d8e0e9; border-radius: 14px; color: var(--muted); text-align: center; }
+    .detail-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; margin-top: 14px; }
+    .detail-item { padding: 10px 11px; border-radius: 11px; background: #f4f7fa; }
+    .detail-item span { display: block; color: var(--muted); font-size: .68rem; }
+    .detail-item strong { display: block; margin-top: 4px; font-size: .82rem; line-height: 1.3; }
+    .detail-pay { margin: 16px 0; padding: 14px; border: 1px solid rgba(35,168,199,.24); border-radius: 14px; background: linear-gradient(135deg, #f4fbfd, #fbfcfe); }
+    .detail-pay strong { display: block; font-size: 1.35rem; }
+    .detail-pay span { display: block; margin-top: 3px; color: var(--green); font-size: .9rem; font-weight: 850; }
     .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     .metric-card, .panel {
       background: var(--panel); border: 1px solid var(--line); border-radius: 19px; box-shadow: 0 8px 23px rgba(24,41,68,.035);
@@ -389,6 +426,21 @@
       .sync-banner { align-items: center; flex-direction: row; gap: 8px; padding: 10px 11px; border-radius: 13px; margin-bottom: 12px; }
       .contract-notice { align-items: stretch; flex-direction: column; gap: 9px; margin-bottom: 12px; padding: 11px 12px; }
       .contract-notice .btn { width: 100%; }
+      .view-tabs { width: 100%; margin-bottom: 12px; }
+      .view-tab { flex: 1; padding: 8px 9px; font-size: .72rem; }
+      .history-panel { padding: 14px; }
+      .contract-card { padding: 12px; }
+      .contract-card-head { gap: 8px; }
+      .contract-card-title { font-size: .9rem; }
+      .contract-card-link { font-size: .66rem; }
+      .contract-card-stats { gap: 5px; margin-top: 10px; }
+      .contract-card-stat { padding: 8px 7px; }
+      .contract-card-stat span, .contract-card-pay span { font-size: .61rem; }
+      .contract-card-stat strong { font-size: .82rem; }
+      .contract-card-pay { align-items: flex-start; flex-direction: column; gap: 3px; margin-top: 9px; padding-top: 9px; }
+      .contract-card-pay strong { font-size: .9rem; }
+      .contract-card-meta { font-size: .65rem; gap: 4px 10px; }
+      .detail-grid { grid-template-columns: 1fr; gap: 7px; }
       .sync-banner > div:first-child { min-width: 0; }
       .sync-banner strong { font-size: .78rem; }
       .sync-banner span { font-size: .68rem; line-height: 1.3; margin-top: 2px; }
@@ -561,6 +613,12 @@
         </div>
       </div>
 
+      <nav class="view-tabs" role="tablist" aria-label="Tracker views">
+        <button class="view-tab active" id="activeContractTab" type="button" role="tab" aria-selected="true" aria-controls="activeContractView">Active contract</button>
+        <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView">Contract history <span class="view-tab-count" id="contractHistoryCount">0</span></button>
+      </nav>
+
+      <div id="activeContractView">
       <div class="sync-banner">
         <div><strong id="syncTitle">Waiting for StaffMe hourly data</strong><span id="syncDetail">Keep the StaffMe Hourly AHT table open, then refresh this dashboard.</span></div>
         <div class="sync-status" id="syncStatus">WAITING</div>
@@ -603,7 +661,6 @@
         <div class="week-label average-label">Current averages</div>
         <p class="muted average-help">Total work includes all available data. Current averages use only contract weeks with data; future or zero-data weeks are excluded.</p>
         <div class="contract-total-grid" id="contractAverage"></div>
-        <div id="contractHistory"></div>
         <div class="table-scroll">
           <table class="day-table contract-week-table">
             <thead><tr><th>Contract week</th><th>Date range</th><th>Work hours</th><th>In coverage</th><th>Weekend adherence</th></tr></thead>
@@ -649,6 +706,16 @@
           <span class="tag tag-neutral" id="rowCount"></span>
         </div>
         <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
+      </section>
+      </div>
+
+      <section id="historyView" class="history-view" hidden>
+        <div class="panel full-panel history-panel">
+          <div class="panel-head">
+            <div><div class="week-label">Contract history</div><h2>Previous contracts</h2><p>Each saved contract keeps its own hours, payment rules, and USD/PHP rate snapshot.</p></div>
+          </div>
+          <div id="contractHistoryCards"></div>
+        </div>
       </section>
     </section>
   </main>
@@ -705,6 +772,7 @@
     let autoRefreshRemaining = 60;
     let contractEndTimer = null;
     let contractPromptShownKey = '';
+    let dashboardView = 'active';
 
     function profileKey(email) {
       return 'staffme-tracker:' + email.trim().toLowerCase();
@@ -1023,10 +1091,8 @@
       refreshExchangeRate(false);
     }
 
-    function renderPayEstimate(workHours) {
-      const root = document.getElementById('payEstimate');
-      if (!root) return;
-      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+    function calculatePayEstimate(workHours, paySettings) {
+      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, paySettings || {});
       const totalHours = Math.max(0, numberValue(workHours));
       const minimumHours = Math.max(0, numberValue(pay.minimumHours));
       const minimumFee = Math.max(0, numberValue(pay.minimumFee));
@@ -1036,25 +1102,44 @@
       const excessPay = excessHours * excessRate;
       const usdTotal = minimumFee + excessPay;
       const phpTotal = usdTotal * usdToPhp;
-      const phpMinimum = minimumFee * usdToPhp;
-      const minimumRemaining = Math.max(0, minimumHours - totalHours);
+      return {
+        totalHours: totalHours,
+        minimumHours: minimumHours,
+        minimumFee: minimumFee,
+        excessRate: excessRate,
+        usdToPhp: usdToPhp,
+        excessHours: excessHours,
+        excessPay: excessPay,
+        usdTotal: usdTotal,
+        phpTotal: phpTotal,
+        rateMode: pay.exchangeRateMode === 'manual' ? 'manual' : 'automatic',
+        rateSource: String(pay.exchangeRateSource || ''),
+        rateUpdatedAt: String(pay.exchangeRateUpdatedAt || '')
+      };
+    }
+
+    function renderPayEstimate(workHours) {
+      const root = document.getElementById('payEstimate');
+      if (!root) return;
+      const estimate = calculatePayEstimate(workHours, state.settings.pay);
+      const minimumRemaining = Math.max(0, estimate.minimumHours - estimate.totalHours);
       const threshold = minimumRemaining > 0
         ? '<span class="pay-status pending">' + hours(minimumRemaining) + 'h until minimum</span>'
         : '<span class="pay-status reached">Minimum hours reached</span>';
-      const phpTotalLabel = usdToPhp > 0 ? '₱' + money(phpTotal) : 'Set PHP rate';
-      const phpMinimumLabel = usdToPhp > 0 ? '₱' + money(phpMinimum) : '—';
+      const phpTotalLabel = estimate.usdToPhp > 0 ? '₱' + money(estimate.phpTotal) : 'Set PHP rate';
+      const phpMinimumLabel = estimate.usdToPhp > 0 ? '₱' + money(estimate.minimumFee * estimate.usdToPhp) : '—';
       const rateStatus = exchangeRateStatusMarkup();
 
       root.innerHTML =
         '<div class="pay-estimate">' +
           '<div class="pay-estimate-head">' +
-            '<div><div class="week-label">Pay estimate</div><h3>Possible contract pay</h3><p>Based on ' + hours(totalHours) + 'h total work in this contract term.</p></div>' +
-            '<div class="pay-amount"><strong>$' + money(usdTotal) + '</strong><span>' + phpTotalLabel + '</span></div>' +
+            '<div><div class="week-label">Pay estimate</div><h3>Possible contract pay</h3><p>Based on ' + hours(estimate.totalHours) + 'h total work in this contract term.</p></div>' +
+            '<div class="pay-amount"><strong>$' + money(estimate.usdTotal) + '</strong><span>' + phpTotalLabel + '</span></div>' +
           '</div>' +
           '<div class="pay-estimate-grid">' +
-            '<div class="pay-estimate-item"><span>Minimum fee</span><strong>$' + money(minimumFee) + ' · ' + phpMinimumLabel + '</strong></div>' +
-            '<div class="pay-estimate-item"><span>Excess hours</span><strong>' + hours(excessHours) + 'h × $' + money(excessRate) + ' = $' + money(excessPay) + '</strong></div>' +
-            '<div class="pay-estimate-item"><span>Pay rule</span><strong>' + hours(minimumHours) + 'h minimum</strong></div>' +
+            '<div class="pay-estimate-item"><span>Minimum fee</span><strong>$' + money(estimate.minimumFee) + ' · ' + phpMinimumLabel + '</strong></div>' +
+            '<div class="pay-estimate-item"><span>Excess hours</span><strong>' + hours(estimate.excessHours) + 'h × $' + money(estimate.excessRate) + ' = $' + money(estimate.excessPay) + '</strong></div>' +
+            '<div class="pay-estimate-item"><span>Pay rule</span><strong>' + hours(estimate.minimumHours) + 'h minimum</strong></div>' +
           '</div>' +
           '<div class="pay-note">' + threshold + rateStatus + '<span>Formula: minimum fee + excess hours × excess rate.</span></div>' +
         '</div>';
@@ -1386,6 +1471,18 @@
       });
     }
 
+    function rangeForContractRecord(contract) {
+      const start = parseDate(contract && contract.start);
+      const end = parseDate(contract && contract.end);
+      if (!start || !end || start > end) return { start: start, end: end, invalid: true };
+      return { start: start, end: end, invalid: false };
+    }
+
+    function calculateStoredPayEstimate(totals, settings, stored) {
+      const estimate = calculatePayEstimate(totals && totals.work, settings && settings.pay);
+      return Object.assign(estimate, stored && typeof stored === 'object' ? stored : {});
+    }
+
     function normalizeContracts(contracts) {
       return (Array.isArray(contracts) ? contracts : []).map(function(contract, index) {
         const start = String(contract && contract.start || '').slice(0, 10);
@@ -1394,19 +1491,22 @@
         const endDate = parseDate(end);
         if (!startDate || !endDate || startDate > endDate) return null;
         const totals = contract && contract.totals && typeof contract.totals === 'object' ? contract.totals : {};
+        const settings = mergeSettings(contract && contract.settings);
+        const normalizedTotals = {
+          work: Math.max(0, numberValue(totals.work)),
+          coverage: Math.max(0, numberValue(totals.coverage)),
+          adherence: Math.max(0, numberValue(totals.adherence))
+        };
         return {
           id: String(contract && contract.id || ('contract-' + index + '-' + start)),
           start: start,
           end: end,
-          settings: mergeSettings(contract && contract.settings),
+          settings: settings,
           rows: normalizeRows(contract && contract.rows || []),
           manualEntries: normalizeManualEntries(contract && contract.manualEntries || []),
           reportedWeeks: normalizeReportedWeeks(contract && contract.reportedWeeks || []),
-          totals: {
-            work: Math.max(0, numberValue(totals.work)),
-            coverage: Math.max(0, numberValue(totals.coverage)),
-            adherence: Math.max(0, numberValue(totals.adherence))
-          },
+          totals: normalizedTotals,
+          payEstimate: calculateStoredPayEstimate(normalizedTotals, settings, contract && contract.payEstimate),
           effectiveEndAt: String(contract && contract.effectiveEndAt || ''),
           archivedAt: String(contract && contract.archivedAt || '')
         };
@@ -1433,6 +1533,7 @@
           manualEntries: mergeManualEntries(local.manualEntries, remote.manualEntries),
           reportedWeeks: mergeReportedWeeks(local.reportedWeeks, remote.reportedWeeks),
           totals: remote.totals.work || remote.totals.coverage || remote.totals.adherence ? remote.totals : local.totals,
+          payEstimate: remote.payEstimate || local.payEstimate,
           effectiveEndAt: remote.effectiveEndAt || local.effectiveEndAt,
           archivedAt: remote.archivedAt || local.archivedAt
         });
@@ -1453,36 +1554,169 @@
       const reportedWeeks = normalizeReportedWeeks(state.reportedWeeks).filter(function(report) {
         return dateInRange(parseDate(report.start), range);
       });
+      const settings = mergeSettings(state.settings);
       return {
         id: makeId('contract'),
         start: isoDate(range.start),
         end: isoDate(range.end),
-        settings: mergeSettings(state.settings),
+        settings: settings,
         rows: rows,
         manualEntries: manualEntries,
         reportedWeeks: reportedWeeks,
         totals: official,
+        payEstimate: calculatePayEstimate(official.work, settings.pay),
         effectiveEndAt: contractEndBoundary(range).toISOString(),
         archivedAt: new Date().toISOString()
       };
     }
 
+    function currentContractSnapshot() {
+      const range = contractRange();
+      if (!range || range.invalid) return null;
+      const settings = mergeSettings(state.settings);
+      const totals = summarizeOfficialWeeks(officialAgreementWeeks(range));
+      return {
+        id: 'current',
+        start: isoDate(range.start),
+        end: isoDate(range.end),
+        settings: settings,
+        rows: normalizeRows(state.rows).filter(function(row) {
+          return dateInRange(contractDateForRow(row), range);
+        }),
+        manualEntries: normalizeManualEntries(state.manualEntries).filter(function(entry) {
+          return dateInRange(parseDate(entry.date), range);
+        }),
+        reportedWeeks: normalizeReportedWeeks(state.reportedWeeks).filter(function(report) {
+          return dateInRange(parseDate(report.start), range);
+        }),
+        totals: totals,
+        payEstimate: calculatePayEstimate(totals.work, settings.pay),
+        effectiveEndAt: contractEndBoundary(range).toISOString(),
+        archivedAt: ''
+      };
+    }
+
+    function contractRecordCount(contract) {
+      return Number(contract && contract.rows ? contract.rows.length : 0) +
+        Number(contract && contract.manualEntries ? contract.manualEntries.length : 0) +
+        Number(contract && contract.reportedWeeks ? contract.reportedWeeks.length : 0);
+    }
+
+    function contractCardMarkup(contract, isCurrent) {
+      const range = rangeForContractRecord(contract);
+      const ended = !isCurrent || (range && contractHasEnded(range));
+      const statusText = ended ? 'Ended' : 'Active';
+      const statusClass = ended ? 'ended' : 'active';
+      const settings = mergeSettings(contract.settings);
+      const pay = calculateStoredPayEstimate(contract.totals, settings, contract.payEstimate);
+      const period = formatDate(parseDate(contract.start)) + ' – ' + formatDate(parseDate(contract.end));
+      const boundary = contract.effectiveEndAt ? formatDateTime(contract.effectiveEndAt) : (range && !range.invalid ? formatDateTime(contractEndBoundary(range)) : '—');
+      const rateLabel = pay.usdToPhp > 0 ? '₱' + money(pay.usdToPhp) : '—';
+      const dataLabel = isCurrent ? 'Live data' : 'Saved data';
+      return '<button class="contract-card" type="button" data-contract-id="' + escapeHtml(contract.id) + '" aria-label="View details for contract ' + escapeHtml(period) + '">' +
+        '<div class="contract-card-head"><div><div class="contract-card-title">' + (isCurrent ? 'Current contract' : 'Contract ' + escapeHtml(period)) + '</div><div class="contract-card-subtitle">' + escapeHtml(period) + ' · Final shift boundary ' + escapeHtml(boundary) + '</div><span class="contract-status ' + statusClass + '">' + statusText + '</span></div><span class="contract-card-link">View details →</span></div>' +
+        '<div class="contract-card-stats">' +
+          '<div class="contract-card-stat"><span>Total work</span><strong>' + hours(contract.totals.work) + 'h</strong></div>' +
+          '<div class="contract-card-stat"><span>InCoverage</span><strong>' + hours(contract.totals.coverage) + 'h</strong></div>' +
+          '<div class="contract-card-stat"><span>Weekend adherence</span><strong>' + hours(contract.totals.adherence) + 'h</strong></div>' +
+        '</div>' +
+        '<div class="contract-card-pay"><span>' + (isCurrent ? 'Current estimate' : 'Final estimate') + '</span><strong>$' + money(pay.usdTotal) + '<em>₱' + money(pay.phpTotal) + '</em></strong></div>' +
+        '<div class="contract-card-meta"><span>Minimum $' + money(pay.minimumFee) + ' · Excess $' + money(pay.excessRate) + '/h</span><span>' + dataLabel + ': ' + contract.rows.length + ' StaffMe rows · ' + contract.manualEntries.length + ' manual entries</span><span>USD/PHP: ' + rateLabel + '</span></div>' +
+        '</button>';
+    }
+
     function renderContractHistory() {
-      const root = document.getElementById('contractHistory');
-      const contracts = normalizeContracts(state.contracts);
-      if (!contracts.length) {
-        root.innerHTML = '';
+      const root = document.getElementById('contractHistoryCards');
+      const countRoot = document.getElementById('contractHistoryCount');
+      if (!root || !countRoot) return;
+      const archived = normalizeContracts(state.contracts);
+      const current = currentContractSnapshot();
+      countRoot.textContent = String(archived.length);
+      if (!current && !archived.length) {
+        root.innerHTML = '<div class="history-empty">No contract history is saved yet. Your current contract will appear here after it is archived.</div>';
         return;
       }
-      root.innerHTML =
-        '<div class="contract-history">' +
-          '<div class="contract-history-head"><h3>Previous contracts</h3><p>Archived data remains saved separately from the current contract.</p></div>' +
-          '<div class="table-scroll"><table class="day-table"><thead><tr><th>Contract period</th><th>Work hours</th><th>InCoverage</th><th>Weekend adherence</th><th>Saved data</th></tr></thead><tbody>' +
-            contracts.map(function(contract) {
-              return '<tr><td>' + formatDate(contract.start) + ' – ' + formatDate(contract.end) + '</td><td>' + hours(contract.totals.work) + 'h</td><td>' + hours(contract.totals.coverage) + 'h</td><td>' + hours(contract.totals.adherence) + 'h</td><td>' + (contract.rows.length + contract.manualEntries.length + contract.reportedWeeks.length) + ' records</td></tr>';
-            }).join('') +
-          '</tbody></table></div>' +
-        '</div>';
+      const parts = [];
+      if (current) {
+        parts.push('<div class="history-group-label">Current contract</div><div class="history-list">' + contractCardMarkup(current, true) + '</div>');
+      }
+      if (archived.length) {
+        parts.push('<div class="history-group-label">Previous contracts</div><div class="history-list">' + archived.map(function(contract) { return contractCardMarkup(contract, false); }).join('') + '</div>');
+      }
+      root.innerHTML = parts.join('');
+      root.querySelectorAll('[data-contract-id]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          openContractDetails(button.getAttribute('data-contract-id'));
+        });
+      });
+    }
+
+    function openContractDetails(id) {
+      const current = id === 'current';
+      const contract = current
+        ? currentContractSnapshot()
+        : normalizeContracts(state.contracts).find(function(item) { return item.id === id; });
+      if (!contract) return;
+      const range = rangeForContractRecord(contract);
+      const settings = mergeSettings(contract.settings);
+      const pay = calculateStoredPayEstimate(contract.totals, settings, contract.payEstimate);
+      const ended = !current || (range && contractHasEnded(range));
+      const statusText = ended ? 'Ended' : 'Active';
+      const statusClass = ended ? 'ended' : 'active';
+      const boundary = contract.effectiveEndAt ? formatDateTime(contract.effectiveEndAt) : '—';
+      const rateText = pay.rateMode === 'manual'
+        ? 'Manual rate'
+        : 'Automatic' + (pay.rateSource ? ' · ' + escapeHtml(pay.rateSource) : ' · Google Finance');
+      const action = current && ended ? '<button class="btn btn-primary" id="historyStartNewContract" type="button">Start new contract</button>' : '';
+      document.getElementById('modalRoot').innerHTML =
+        '<div class="modal-backdrop" id="historyDetailBackdrop"><div class="modal">' +
+          '<div class="modal-head"><div><div class="eyebrow">Read-only contract history</div><h2>' + (current ? 'Current contract' : 'Previous contract') + '</h2><p class="muted">' + escapeHtml(formatDate(parseDate(contract.start)) + ' – ' + formatDate(parseDate(contract.end))) + '</p></div><button class="close" id="closeHistoryDetail" type="button">×</button></div>' +
+          '<div class="detail-status"><span class="contract-status ' + statusClass + '">' + statusText + '</span><span class="muted">' + (boundary !== '—' ? 'Final duty boundary: ' + escapeHtml(boundary) : '') + '</span></div>' +
+          '<div class="detail-pay"><div class="week-label">' + (current ? 'Current estimate' : 'Final estimate') + '</div><strong>$' + money(pay.usdTotal) + '</strong><span>₱' + money(pay.phpTotal) + '</span></div>' +
+          '<div class="detail-grid">' +
+            '<div class="detail-item"><span>Total work hours</span><strong>' + hours(contract.totals.work) + 'h</strong></div>' +
+            '<div class="detail-item"><span>InCoverage hours</span><strong>' + hours(contract.totals.coverage) + 'h</strong></div>' +
+            '<div class="detail-item"><span>Weekend adherence</span><strong>' + hours(contract.totals.adherence) + 'h</strong></div>' +
+            '<div class="detail-item"><span>Minimum fee</span><strong>$' + money(pay.minimumFee) + '</strong></div>' +
+            '<div class="detail-item"><span>Excess hourly rate</span><strong>$' + money(pay.excessRate) + '/h</strong></div>' +
+            '<div class="detail-item"><span>USD to PHP rate</span><strong>' + rateText + '<br>₱' + money(pay.usdToPhp) + '</strong></div>' +
+            '<div class="detail-item"><span>Duty window</span><strong>' + escapeHtml(settings.start) + ' – ' + escapeHtml(settings.end) + '</strong></div>' +
+            '<div class="detail-item"><span>Weekend adherence days</span><strong>' + settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
+            '<div class="detail-item"><span>StaffMe rows stored</span><strong>' + contract.rows.length + '</strong></div>' +
+            '<div class="detail-item"><span>Manual entries</span><strong>' + contract.manualEntries.length + '</strong></div>' +
+            '<div class="detail-item"><span>Reported weeks</span><strong>' + contract.reportedWeeks.length + '</strong></div>' +
+            '<div class="detail-item"><span>Archived on</span><strong>' + (contract.archivedAt ? escapeHtml(formatDateTime(contract.archivedAt)) : 'Not archived') + '</strong></div>' +
+          '</div>' +
+          '<div class="field-help">This view is read-only. The saved payment rules and USD/PHP rate belong to this contract and will not change when the current rate updates.</div>' +
+          '<div class="modal-actions">' + action + '<span class="modal-spacer"></span><button class="btn" id="closeHistoryDetailBottom" type="button">Close</button></div>' +
+        '</div></div>';
+      function closeHistoryDetails() { closeModal(); }
+      document.getElementById('closeHistoryDetail').addEventListener('click', closeHistoryDetails);
+      document.getElementById('closeHistoryDetailBottom').addEventListener('click', closeHistoryDetails);
+      document.getElementById('historyDetailBackdrop').addEventListener('click', function(event) { if (event.target.id === 'historyDetailBackdrop') closeHistoryDetails(); });
+      const startButton = document.getElementById('historyStartNewContract');
+      if (startButton) startButton.addEventListener('click', function() { closeModal(); openNewContract(); });
+    }
+
+    function updateDashboardView() {
+      const history = dashboardView === 'history';
+      const activeView = document.getElementById('activeContractView');
+      const historyView = document.getElementById('historyView');
+      const activeTab = document.getElementById('activeContractTab');
+      const historyTab = document.getElementById('contractHistoryTab');
+      if (!activeView || !historyView || !activeTab || !historyTab) return;
+      activeView.hidden = history;
+      historyView.hidden = !history;
+      activeTab.classList.toggle('active', !history);
+      historyTab.classList.toggle('active', history);
+      activeTab.setAttribute('aria-selected', String(!history));
+      historyTab.setAttribute('aria-selected', String(history));
+    }
+
+    function setDashboardView(view) {
+      dashboardView = view === 'history' ? 'history' : 'active';
+      renderContractHistory();
+      updateDashboardView();
     }
 
     function mergeManualEntries(localEntries, remoteEntries) {
@@ -2104,6 +2338,7 @@
       }
 
       renderContractHistory();
+      updateDashboardView();
 
       document.getElementById('contractWeekRows').innerHTML = officialWeeks.length ? officialWeeks.map(function(week) {
         return '<tr><td>Week ' + week.index + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + officialValueCell(week, 'displayWork', 'workReported') + '</td><td>' + officialValueCell(week, 'displayCoverage', 'coverageReported') + '</td><td>' + officialValueCell(week, 'displayAdherence', 'adherenceReported') + '</td></tr>';
@@ -2280,15 +2515,6 @@
     function scheduleContractEndPrompt(range) {
       window.clearTimeout(contractEndTimer);
       contractEndTimer = null;
-      if (!state.email || !range || range.invalid) return;
-      const key = contractKey(range);
-      if (state.contractPromptDismissedKey === key || contractPromptShownKey === key) return;
-      const delay = contractEndBoundary(range).getTime() - Date.now();
-      if (delay <= 0) {
-        window.setTimeout(maybePromptForEndedContract, 0);
-        return;
-      }
-      contractEndTimer = window.setTimeout(maybePromptForEndedContract, Math.min(delay, 2147483647));
     }
 
     function renderContractStatus(range) {
@@ -2301,7 +2527,7 @@
       }
       root.hidden = false;
       root.innerHTML =
-        '<div class="contract-notice-copy"><strong>Current contract ended</strong><span>Final shift boundary: ' + escapeHtml(formatDateTime(contractEndBoundary(range))) + '. Start a new contract when you are ready.</span></div>' +
+        '<div class="contract-notice-copy"><strong>Contract ended on ' + escapeHtml(formatDate(range.end)) + '</strong><span>Final duty boundary: ' + escapeHtml(formatDateTime(contractEndBoundary(range))) + '. Start a new contract to continue tracking hours.</span></div>' +
         '<button class="btn" type="button" id="contractNoticeBtn">Start new contract</button>';
       document.getElementById('contractNoticeBtn').addEventListener('click', function() {
         openNewContract();
@@ -2683,6 +2909,8 @@
       render();
     });
 
+    document.getElementById('activeContractTab').addEventListener('click', function() { setDashboardView('active'); });
+    document.getElementById('contractHistoryTab').addEventListener('click', function() { setDashboardView('history'); });
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
     document.getElementById('manualAddBtn').addEventListener('click', openManualEntry);
     document.getElementById('manualAddTopBtn').addEventListener('click', openManualEntry);
