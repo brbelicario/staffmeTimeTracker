@@ -139,6 +139,22 @@
     .profile-line { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
     .profile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
     .head-actions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+    .refresh-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+    .auto-refresh-control {
+      display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 11px; background: #fff;
+    }
+    .auto-refresh-label {
+      display: flex; align-items: center; gap: 7px; color: var(--muted);
+      font-size: .78rem; font-weight: 800; white-space: nowrap; cursor: pointer;
+    }
+    .auto-refresh-label input[type="checkbox"] {
+      width: 16px; height: 16px; margin: 0; accent-color: var(--cyan);
+    }
+    .auto-refresh-countdown {
+      color: var(--muted); font-size: .76rem; font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
     .sync-banner {
       display: flex; justify-content: space-between; align-items: center; gap: 16px;
       padding: 14px 16px; background: var(--navy); color: white; border-radius: 16px; margin-bottom: 18px;
@@ -381,7 +397,16 @@
           <div class="profile-line"><span class="profile-dot"></span><span id="profileEmail"></span><span>·</span><span id="weekRange"></span></div>
         </div>
         <div class="head-actions">
-          <button class="btn" id="refreshBtn">Refresh StaffMe data</button>
+          <div class="refresh-actions">
+            <button class="btn" id="refreshBtn" type="button">Refresh StaffMe data</button>
+            <div class="auto-refresh-control" title="Request fresh StaffMe data every 60 seconds">
+              <label class="auto-refresh-label" for="autoRefreshToggle">
+                <input type="checkbox" id="autoRefreshToggle" checked>
+                <span>Auto-refresh</span>
+              </label>
+              <span class="auto-refresh-countdown" id="autoRefreshCountdown" aria-live="polite">In 60s</span>
+            </div>
+          </div>
           <button class="btn" id="manualAddTopBtn">Add manual hours</button>
           <button class="btn btn-cyan" id="settingsBtn">Schedule settings</button>
         </div>
@@ -499,6 +524,7 @@
       contracts: [],
       source: 'waiting',
       lastSync: null,
+      autoRefresh: true,
       helperStatus: null,
       remoteStatus: 'unknown',
       remoteReady: false,
@@ -506,6 +532,10 @@
     };
 
     let remoteSaveTimer = null;
+    const AUTO_REFRESH_INTERVAL_MS = 60000;
+    let autoRefreshTimer = null;
+    let autoRefreshCountdownTimer = null;
+    let autoRefreshRemaining = 60;
 
     function profileKey(email) {
       return 'staffme-tracker:' + email.trim().toLowerCase();
@@ -519,7 +549,8 @@
         reportedWeeks: state.reportedWeeks,
         contracts: state.contracts,
         source: state.source,
-        lastSync: state.lastSync
+        lastSync: state.lastSync,
+        autoRefresh: state.autoRefresh !== false
       }));
     }
 
@@ -611,6 +642,7 @@
         state.contracts = normalizeContracts(saved.contracts || []);
         state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
         state.lastSync = saved.lastSync || null;
+        state.autoRefresh = saved.autoRefresh !== false;
         state.helperStatus = null;
         if (isDemoProfile) saveProfile();
         return true;
@@ -1542,6 +1574,7 @@
       document.getElementById('loginView').hidden = loggedIn;
       document.getElementById('dashboardView').hidden = !loggedIn;
       document.getElementById('topActions').hidden = !loggedIn;
+      updateAutoRefreshControls();
       document.getElementById('profileDropdown').hidden = true;
       document.getElementById('profileBtn').setAttribute('aria-expanded', 'false');
       if (!loggedIn) return;
@@ -1956,14 +1989,16 @@
         state.contracts = [];
         state.source = 'waiting';
         state.lastSync = null;
+        state.autoRefresh = true;
         state.helperStatus = null;
         saveProfile();
       }
       state.remoteReady = false;
       state.remoteStatus = 'loading';
       render();
+      startAutoRefresh();
       window.setTimeout(function() {
-        requestStaffMeRows();
+        refreshStaffMeData(false);
         pullRemoteProfile();
       }, 150);
     }
@@ -2045,6 +2080,7 @@
       state.contracts = [];
       state.remoteReady = false;
       state.remoteStatus = 'unknown';
+      stopAutoRefresh();
       closeModal();
       render();
     });
@@ -2058,9 +2094,70 @@
       window.postMessage({ type: 'STAFFME_REQUEST_DATA' }, '*');
     }
 
-    document.getElementById('refreshBtn').addEventListener('click', function() {
+    function updateAutoRefreshControls() {
+      const toggle = document.getElementById('autoRefreshToggle');
+      const countdown = document.getElementById('autoRefreshCountdown');
+      if (!toggle || !countdown) return;
+      const enabled = Boolean(state.email) && state.autoRefresh !== false;
+      toggle.checked = enabled;
+      toggle.disabled = !state.email;
+      countdown.textContent = enabled ? 'In ' + autoRefreshRemaining + 's' : 'Off';
+      countdown.setAttribute('aria-label', enabled
+        ? 'Auto-refresh in ' + autoRefreshRemaining + ' seconds'
+        : 'Auto-refresh off');
+    }
+
+    function stopAutoRefresh() {
+      window.clearInterval(autoRefreshTimer);
+      window.clearInterval(autoRefreshCountdownTimer);
+      autoRefreshTimer = null;
+      autoRefreshCountdownTimer = null;
+      autoRefreshRemaining = 60;
+      updateAutoRefreshControls();
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      if (!state.email || state.autoRefresh === false) return;
+
+      autoRefreshCountdownTimer = window.setInterval(function() {
+        if (!state.email || state.autoRefresh === false) {
+          stopAutoRefresh();
+          return;
+        }
+        autoRefreshRemaining = Math.max(0, autoRefreshRemaining - 1);
+        updateAutoRefreshControls();
+      }, 1000);
+
+      autoRefreshTimer = window.setInterval(function() {
+        if (!state.email || state.autoRefresh === false) return;
+        refreshStaffMeData(false);
+      }, AUTO_REFRESH_INTERVAL_MS);
+      updateAutoRefreshControls();
+    }
+
+    function refreshStaffMeData(showMessage) {
+      if (!state.email) return;
       requestStaffMeRows();
-      showToast('Requesting the latest StaffMe rows...');
+      autoRefreshRemaining = 60;
+      updateAutoRefreshControls();
+      if (showMessage) showToast('Requesting the latest StaffMe rows...');
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', function() {
+      refreshStaffMeData(true);
+    });
+
+    document.getElementById('autoRefreshToggle').addEventListener('change', function() {
+      state.autoRefresh = this.checked;
+      saveProfile();
+      if (state.autoRefresh) {
+        startAutoRefresh();
+        refreshStaffMeData(true);
+      } else {
+        stopAutoRefresh();
+        showToast('Auto-refresh turned off.');
+      }
     });
 
     window.addEventListener('message', function(event) {
