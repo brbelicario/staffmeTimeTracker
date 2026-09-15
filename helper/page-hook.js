@@ -3,6 +3,7 @@
   window.__staffMeTimeTrackerNetworkHook = true;
 
   let lastRows = [];
+  let consentGranted = false;
 
   function clean(value) {
     return String(value === undefined || value === null ? "" : value)
@@ -137,6 +138,7 @@
   }
 
   function emitRows(rows) {
+    if (!consentGranted) return;
     const unique = uniqueRows(rows);
     if (!unique.length) return;
     lastRows = unique;
@@ -147,6 +149,7 @@
   }
 
   function inspectText(text) {
+    if (!consentGranted) return;
     const rows = [];
     parseJsonCandidates(text).forEach((parsed) => collectRows(parsed, rows));
     emitRows(rows);
@@ -156,6 +159,7 @@
   if (typeof originalFetch === "function") {
     window.fetch = function(...args) {
       return originalFetch.apply(this, args).then((response) => {
+        if (!consentGranted) return response;
         try {
           response.clone().text().then(inspectText).catch(() => {});
         } catch (error) {
@@ -177,6 +181,7 @@
   XMLHttpRequest.prototype.send = function(...args) {
     this.addEventListener("load", function() {
       try {
+        if (!consentGranted) return;
         if (!this.responseType || this.responseType === "text") {
           inspectText(this.responseText || "");
         }
@@ -189,7 +194,11 @@
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data) return;
-    if (event.data.type === "STAFFME_REQUEST_NETWORK_DATA" && lastRows.length) {
+    if (event.data.type === "STAFFME_HELPER_CONSENT_GRANTED") {
+      consentGranted = true;
+      return;
+    }
+    if (event.data.type === "STAFFME_REQUEST_NETWORK_DATA" && consentGranted && lastRows.length) {
       window.postMessage({
         type: "STAFFME_NETWORK_ROWS",
         rows: lastRows
