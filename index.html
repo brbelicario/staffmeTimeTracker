@@ -830,6 +830,43 @@
     let contractEndTimer = null;
     let contractPromptShownKey = '';
     let dashboardView = 'active';
+    const dashboardScrollPositions = {
+      active: 0,
+      hourly: 0,
+      reports: 0,
+      history: 0
+    };
+
+    function normalizeDashboardView(view) {
+      return view === 'history'
+        ? 'history'
+        : view === 'hourly'
+          ? 'hourly'
+          : view === 'reports'
+            ? 'reports'
+            : 'active';
+    }
+
+    function saveDashboardScrollPosition(view) {
+      if (Object.prototype.hasOwnProperty.call(dashboardScrollPositions, view)) {
+        dashboardScrollPositions[view] = Math.max(0, window.scrollY || window.pageYOffset || 0);
+      }
+    }
+
+    function restoreDashboardScrollPosition(view) {
+      const position = dashboardScrollPositions[view] || 0;
+      window.requestAnimationFrame(function() {
+        window.requestAnimationFrame(function() {
+          window.scrollTo(0, position);
+        });
+      });
+    }
+
+    function resetDashboardScrollPositions() {
+      Object.keys(dashboardScrollPositions).forEach(function(view) {
+        dashboardScrollPositions[view] = 0;
+      });
+    }
 
     function profileKey(email) {
       return 'staffme-tracker:' + email.trim().toLowerCase();
@@ -1784,9 +1821,18 @@
     }
 
     function setDashboardView(view) {
-      dashboardView = view === 'history' ? 'history' : view === 'hourly' ? 'hourly' : view === 'reports' ? 'reports' : 'active';
+      const nextView = normalizeDashboardView(view);
+      if (nextView === dashboardView) {
+        renderContractHistory();
+        updateDashboardView();
+        restoreDashboardScrollPosition(nextView);
+        return;
+      }
+      saveDashboardScrollPosition(dashboardView);
+      dashboardView = nextView;
       renderContractHistory();
       updateDashboardView();
+      restoreDashboardScrollPosition(nextView);
     }
 
     function mergeManualEntries(localEntries, remoteEntries) {
@@ -2864,6 +2910,8 @@
     }
 
     function activateUser(user) {
+      resetDashboardScrollPositions();
+      dashboardView = 'active';
       state.user = user;
       state.email = String(user.email || '').toLowerCase();
       if (!loadProfile(state.email)) {
@@ -2963,6 +3011,8 @@
 
     document.getElementById('logoutBtn').addEventListener('click', function() {
       fetch('/api/auth?mode=logout', { cache: 'no-store' }).catch(function() {});
+      resetDashboardScrollPositions();
+      dashboardView = 'active';
       state.email = '';
       state.user = null;
       state.helperStatus = null;
@@ -2980,6 +3030,10 @@
       closeModal();
       render();
     });
+
+    window.addEventListener('scroll', function() {
+      if (state.email) saveDashboardScrollPosition(dashboardView);
+    }, { passive: true });
 
     document.getElementById('activeContractTab').addEventListener('click', function() { setDashboardView('active'); });
     document.getElementById('contractHistoryTab').addEventListener('click', function() { setDashboardView('history'); });
