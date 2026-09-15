@@ -37,9 +37,10 @@
     .topbar {
       min-height: 74px;
       padding: 0 5vw;
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr);
+      gap: 18px;
       align-items: center;
-      justify-content: space-between;
       background: rgba(255,255,255,.88);
       border-bottom: 1px solid rgba(228,233,240,.9);
       backdrop-filter: blur(14px);
@@ -56,13 +57,24 @@
       font-size: 17px;
     }
     .brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
+    .brand { justify-self: start; }
     .top-navigation {
-      display: flex; align-items: center; justify-content: center; gap: 4px;
-      flex: 0 1 auto; min-width: 0; padding: 4px;
-      border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.76);
+      display: flex; align-items: center; justify-content: center; gap: 3px;
+      justify-self: center; flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 4px;
+      border: 1px solid #dbe5ec; border-radius: 16px;
+      background: linear-gradient(180deg, #f5f9fb, #edf3f6);
+      box-shadow: 0 5px 16px rgba(24,41,68,.08);
     }
-    .top-navigation .view-tab { white-space: nowrap; padding: 8px 11px; font-size: .74rem; }
-    .top-navigation .view-tab.active { box-shadow: 0 5px 12px rgba(24,41,68,.12); }
+    .top-navigation .view-tab {
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      min-height: 34px; white-space: nowrap; padding: 8px 13px;
+      color: #657286; font-size: .76rem; font-weight: 850;
+      transition: color .18s, background .18s, box-shadow .18s, transform .18s;
+    }
+    .top-navigation .view-tab:hover { color: var(--navy); background: rgba(255,255,255,.78); }
+    .top-navigation .view-tab.active { color: #fff; background: var(--navy); box-shadow: 0 5px 12px rgba(24,41,68,.18); }
+    .top-navigation .view-tab.active:hover { color: #fff; background: var(--navy-2); }
+    .top-actions { justify-self: end; }
     .top-actions { display: flex; gap: 9px; align-items: center; }
     .profile-menu { position: relative; }
     .profile-trigger {
@@ -203,7 +215,12 @@
     .view-tab { border: 0; background: transparent; color: var(--muted); border-radius: 10px; padding: 9px 13px; font-size: .78rem; font-weight: 850; }
     .view-tab:hover { color: var(--ink); background: #f3f6f9; }
     .view-tab.active { color: #fff; background: var(--navy); }
-    .view-tab-count { margin-left: 4px; opacity: .72; font-size: .7rem; }
+    .view-tab-count {
+      display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;
+      margin-left: 1px; border-radius: 999px; color: #657286; background: #dfe8ee;
+      font-size: .65rem; font-weight: 900; line-height: 1;
+    }
+    .top-navigation .view-tab.active .view-tab-count { color: var(--navy); background: #fff; }
     .tab-label-short { display: none; }
     .hourly-data-view, .reports-view { margin-top: 0; }
     .history-view { margin-top: 0; }
@@ -403,6 +420,8 @@
       .content-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 1050px) {
+      .topbar { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding-left: 4vw; padding-right: 4vw; }
+      .top-navigation { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
       .dashboard-head { display: flex; flex-direction: column; align-items: stretch; }
       .dashboard-head h1 { white-space: normal; }
       .profile-line { white-space: normal; }
@@ -410,12 +429,12 @@
       .dashboard-sync-group { align-self: stretch; }
     }
     @media (max-width: 680px) {
-      .topbar { min-height: 64px; padding: 8px 4vw 7px; flex-wrap: wrap; gap: 8px 10px; }
+      .topbar { min-height: 64px; padding: 8px 4vw 7px; display: flex; flex-wrap: wrap; gap: 8px 10px; }
       .brand { min-width: 0; flex: 1 1 auto; }
       .top-actions { flex: 0 0 auto; }
-      .top-navigation { order: 3; width: 100%; flex: 1 0 100%; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+      .top-navigation { order: 3; width: 100%; flex: 1 0 100%; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; border-radius: 13px; scroll-snap-type: x proximity; }
       .top-navigation::-webkit-scrollbar { display: none; }
-      .top-navigation .view-tab { flex: 1 0 auto; padding: 7px 10px; font-size: .7rem; white-space: nowrap; }
+      .top-navigation .view-tab { flex: 1 0 auto; min-height: 32px; padding: 7px 10px; font-size: .7rem; white-space: nowrap; scroll-snap-align: start; }
       .shell { width: 92vw; padding-top: 20px; padding-bottom: 42px; }
       .login-card { padding: 28px 22px; }
       .form-row, .dashboard-head { align-items: stretch; flex-direction: column; }
@@ -530,9 +549,9 @@
     </div>
     <nav class="top-navigation" id="topNavigation" hidden role="tablist" aria-label="Tracker views">
       <button class="view-tab active" id="activeContractTab" type="button" role="tab" aria-selected="true" aria-controls="activeContractView"><span class="tab-label-wide">Active contract</span><span class="tab-label-short">Active</span></button>
-      <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView"><span class="tab-label-wide">Contract history</span><span class="tab-label-short">History</span> <span class="view-tab-count" id="contractHistoryCount">0</span></button>
       <button class="view-tab" id="hourlyDataTab" type="button" role="tab" aria-selected="false" aria-controls="hourlyDataView"><span class="tab-label-wide">Hourly data</span><span class="tab-label-short">Hourly</span></button>
       <button class="view-tab" id="reportsTab" type="button" role="tab" aria-selected="false" aria-controls="reportsView"><span class="tab-label-wide">Reports</span><span class="tab-label-short">Reports</span></button>
+      <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView"><span class="tab-label-wide">Contract history</span><span class="tab-label-short">History</span> <span class="view-tab-count" id="contractHistoryCount">0</span></button>
     </nav>
     <div class="top-actions" id="topActions" hidden>
       <div class="profile-menu" id="profileMenu">
