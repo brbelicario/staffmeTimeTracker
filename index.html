@@ -2149,11 +2149,10 @@
             '<span class="tag tag-coverage">InCoverage</span>';
         return '<tr><td>' + formatDate(row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td><div class="row-badges">' + badges + '</div></td></tr>';
       }).join('') : '<tr><td colspan="4"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
-    }
 
        renderContractStatus(range);
        scheduleContractEndPrompt(range);
-     }
+    }
 
     function showToast(message) {
       const root = document.getElementById('toastRoot');
