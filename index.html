@@ -404,6 +404,27 @@
     .toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; padding: 13px 16px; color: white; background: var(--navy); border-radius: 12px; box-shadow: var(--shadow); font-size: .84rem; }
 
     .row-badges { display: flex; flex-wrap: wrap; gap: 5px; min-width: 170px; }
+    .row-update-details { position: relative; display: inline-flex; align-items: flex-start; }
+    .row-update-details > summary { list-style: none; }
+    .row-update-details > summary::-webkit-details-marker { display: none; }
+    .row-update-indicator {
+      width: 22px; height: 22px; display: inline-grid; place-items: center; padding: 0;
+      border: 1px solid #e8b96f; border-radius: 50%; color: #8b5a20; background: #fff4dc;
+      font-size: .76rem; font-weight: 950; line-height: 1; cursor: pointer;
+    }
+    .row-update-indicator:hover, .row-update-indicator:focus-visible { border-color: #c98832; background: #ffe9bd; outline: 3px solid rgba(240,139,85,.18); outline-offset: 2px; }
+    .row-update-popover {
+      display: none; position: absolute; right: 0; top: calc(100% + 7px); z-index: 20;
+      width: min(300px, calc(100vw - 44px)); padding: 11px 12px;
+      border: 1px solid #f0d29d; border-radius: 12px; color: #76552b; background: #fffaf0;
+      box-shadow: 0 12px 26px rgba(24,41,68,.15); font-size: .74rem; line-height: 1.4;
+    }
+    .row-update-details:hover .row-update-popover,
+    .row-update-details:focus-within .row-update-popover,
+    .row-update-details[open] .row-update-popover { display: grid; gap: 4px; }
+    .row-update-popover strong { color: #553d1e; font-size: .76rem; }
+    .row-update-popover span { display: block; }
+    .row-update-popover small { color: #9a7747; font-size: .68rem; }
     .hour-table { min-width: 680px; table-layout: fixed; }
     .hour-table th:nth-child(1), .hour-table td:nth-child(1) { width: 22%; }
     .hour-table th:nth-child(2), .hour-table td:nth-child(2) { width: 17%; }
@@ -1507,14 +1528,73 @@
       return result;
     }
 
+    function rowSnapshot(row) {
+      const aht = row && row.ahtSeconds;
+      return {
+        workedHours: Number(row && row.workedHours || 0),
+        ahtSeconds: aht === null || aht === undefined || aht === '' ? null : Number(aht)
+      };
+    }
+
+    function rowValuesEqual(first, second) {
+      const a = rowSnapshot(first);
+      const b = rowSnapshot(second);
+      const workedMatches = Math.abs(a.workedHours - b.workedHours) < 0.000001;
+      const ahtMatches = a.ahtSeconds === null && b.ahtSeconds === null
+        ? true
+        : a.ahtSeconds !== null && b.ahtSeconds !== null && Math.abs(a.ahtSeconds - b.ahtSeconds) < 0.000001;
+      return workedMatches && ahtMatches;
+    }
+
+    function formatAhtSeconds(value) {
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) return 'not available';
+      const seconds = Math.max(0, Math.round(Number(value)));
+      const minutes = Math.floor(seconds / 60);
+      const remainder = seconds % 60;
+      return minutes ? minutes + 'm ' + String(remainder).padStart(2, '0') + 's' : seconds + 's';
+    }
+
+    function rowUpdateNotice(row) {
+      const previous = row && row.previousValue;
+      if (!previous || !row.updatedAt) return '';
+      const current = rowSnapshot(row);
+      const prior = rowSnapshot(previous);
+      const changes = [];
+      if (Math.abs(prior.workedHours - current.workedHours) >= 0.000001) {
+        changes.push('<span>Worked hours: ' + hours(prior.workedHours) + 'h → ' + hours(current.workedHours) + 'h</span>');
+      }
+      const ahtChanged = prior.ahtSeconds === null && current.ahtSeconds !== null
+        || prior.ahtSeconds !== null && current.ahtSeconds === null
+        || prior.ahtSeconds !== null && current.ahtSeconds !== null && Math.abs(prior.ahtSeconds - current.ahtSeconds) >= 0.000001;
+      if (ahtChanged) {
+        changes.push('<span>AHT: ' + escapeHtml(formatAhtSeconds(prior.ahtSeconds)) + ' → ' + escapeHtml(formatAhtSeconds(current.ahtSeconds)) + '</span>');
+      }
+      if (!changes.length) return '';
+      const updateCount = Array.isArray(row.updateHistory) && row.updateHistory.length ? row.updateHistory.length : 1;
+      return '<details class="row-update-details">' +
+        '<summary class="row-update-indicator" aria-label="Updated hourly row" title="This hourly row was updated">!</summary>' +
+        '<div class="row-update-popover" role="status"><strong>' + (updateCount > 1 ? 'Updated ' + updateCount + ' times' : 'Hourly row updated') + '</strong>' +
+          changes.join('') + '<small>Updated ' + escapeHtml(formatDateTime(row.updatedAt)) + '</small></div>' +
+      '</details>';
+    }
+
     function normalizeRows(rows) {
       return (Array.isArray(rows) ? rows : []).map(function(row) {
-        return {
+        const normalized = {
           date: field(row, ['date', 'Date', 'day'], ''),
           time: field(row, ['time', 'Time', 'hour'], ''),
           workedHours: numberValue(field(row, ['workedHours', 'Worked Hours', 'worked', 'hours', 'Work'], 0)),
           ahtSeconds: ahtSecondsFor(row)
         };
+        const updatedAt = field(row, ['updatedAt', 'updated_at'], '');
+        const previousValue = row && row.previousValue && typeof row.previousValue === 'object' ? row.previousValue : null;
+        if (updatedAt) normalized.updatedAt = String(updatedAt);
+        if (previousValue) normalized.previousValue = {
+          workedHours: numberValue(previousValue.workedHours),
+          ahtSeconds: previousValue.ahtSeconds === null || previousValue.ahtSeconds === undefined || previousValue.ahtSeconds === '' ? null : numberValue(previousValue.ahtSeconds)
+        };
+        if (Array.isArray(row && row.updateHistory)) normalized.updateHistory = row.updateHistory.slice(-10);
+        return normalized;
       }).filter(function(row) {
         return row.date && row.time;
       });
@@ -1884,12 +1964,45 @@
     }
 
     function rowKey(row) {
-      return [row.date, row.time, row.workedHours, row.ahtSeconds].join('|');
+      return [row.date, row.time].join('|');
     }
 
-    function dedupeRows(rows) {
+    function dedupeRows(rows, updateAt) {
       const map = new Map();
-      rows.forEach(function(row) { map.set(rowKey(row), row); });
+      (Array.isArray(rows) ? rows : []).forEach(function(row) {
+        const key = rowKey(row);
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, row);
+          return;
+        }
+        if (rowValuesEqual(existing, row)) {
+          const merged = Object.assign({}, existing, row);
+          if (existing.updatedAt && !row.updatedAt) merged.updatedAt = existing.updatedAt;
+          if (existing.previousValue && !row.previousValue) merged.previousValue = existing.previousValue;
+          if (existing.updateHistory && !row.updateHistory) merged.updateHistory = existing.updateHistory;
+          map.set(key, merged);
+          return;
+        }
+        const changedAt = row.updatedAt || updateAt || '';
+        const merged = Object.assign({}, row);
+        if (changedAt) {
+          const history = Array.isArray(existing.updateHistory) ? existing.updateHistory.slice() : [];
+          history.push({
+            updatedAt: changedAt,
+            previous: rowSnapshot(existing),
+            next: rowSnapshot(row)
+          });
+          merged.updatedAt = changedAt;
+          merged.previousValue = rowSnapshot(existing);
+          merged.updateHistory = history.slice(-10);
+        } else {
+          if (existing.updatedAt) merged.updatedAt = existing.updatedAt;
+          if (existing.previousValue) merged.previousValue = existing.previousValue;
+          if (existing.updateHistory) merged.updateHistory = existing.updateHistory;
+        }
+        map.set(key, merged);
+      });
       return Array.from(map.values());
     }
 
@@ -2483,10 +2596,10 @@
         const calendarDate = calendarDateFor(row);
         const inDuty = withinDutyWindow(row);
         const adherence = Boolean(calendarDate && categoryFor(calendarDate) === 'adherence');
-        const badges = !inDuty
+        const badges = (!inDuty
           ? '<span class="tag tag-neutral">Outside duty</span>'
           : (adherence ? '<span class="tag tag-adherence">Weekend adherence</span>' : '') +
-            '<span class="tag tag-coverage">InCoverage</span>';
+            '<span class="tag tag-coverage">InCoverage</span>') + rowUpdateNotice(row);
         return '<tr><td>' + formatDate(calendarDate || row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td><div class="row-badges">' + badges + '</div></td></tr>';
       }).join('') : '<tr><td colspan="4"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
 
@@ -3143,7 +3256,7 @@
             : 'No StaffMe hourly rows are available yet.');
           return;
         }
-        state.rows = dedupeRows(state.rows.concat(imported));
+        state.rows = dedupeRows(state.rows.concat(imported), event.data.lastSync || new Date().toISOString());
         state.source = 'helper';
         state.lastSync = event.data.lastSync || new Date().toISOString();
         saveProfile();
