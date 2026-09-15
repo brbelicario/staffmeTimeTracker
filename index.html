@@ -197,6 +197,8 @@
     .view-tab:hover { color: var(--ink); background: #f3f6f9; }
     .view-tab.active { color: #fff; background: var(--navy); }
     .view-tab-count { margin-left: 4px; opacity: .72; font-size: .7rem; }
+    .tab-label-short { display: none; }
+    .staffme-data-view { margin-top: 0; }
     .history-view { margin-top: 0; }
     .history-panel { min-height: 220px; }
     .history-group-label { margin: 3px 0 9px; color: var(--cyan); font-size: .75rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
@@ -428,6 +430,8 @@
       .contract-notice .btn { width: 100%; }
       .view-tabs { width: 100%; margin-bottom: 12px; }
       .view-tab { flex: 1; padding: 8px 9px; font-size: .72rem; }
+      .tab-label-wide { display: none; }
+      .tab-label-short { display: inline; }
       .history-panel { padding: 14px; }
       .contract-card { padding: 12px; }
       .contract-card-head { gap: 8px; }
@@ -614,16 +618,12 @@
       </div>
 
       <nav class="view-tabs" role="tablist" aria-label="Tracker views">
-        <button class="view-tab active" id="activeContractTab" type="button" role="tab" aria-selected="true" aria-controls="activeContractView">Active contract</button>
-        <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView">Contract history <span class="view-tab-count" id="contractHistoryCount">0</span></button>
+        <button class="view-tab active" id="activeContractTab" type="button" role="tab" aria-selected="true" aria-controls="activeContractView"><span class="tab-label-wide">Active contract</span><span class="tab-label-short">Active</span></button>
+        <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView"><span class="tab-label-wide">Contract history</span><span class="tab-label-short">History</span> <span class="view-tab-count" id="contractHistoryCount">0</span></button>
+        <button class="view-tab" id="staffMeDataTab" type="button" role="tab" aria-selected="false" aria-controls="staffMeDataView"><span class="tab-label-wide">StaffMe data</span><span class="tab-label-short">Data</span></button>
       </nav>
 
       <div id="activeContractView">
-      <div class="sync-banner">
-        <div><strong id="syncTitle">Waiting for StaffMe hourly data</strong><span id="syncDetail">Keep the StaffMe Hourly AHT table open, then refresh this dashboard.</span></div>
-        <div class="sync-status" id="syncStatus">WAITING</div>
-      </div>
-
       <div class="contract-notice" id="contractNotice" hidden></div>
 
       <div class="metric-grid" id="metricGrid"></div>
@@ -700,13 +700,6 @@
         <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Total work hours</th><th>In coverage</th><th>Outside duty</th><th>Weekend adherence</th><th>Manual / Other Task</th></tr></thead><tbody id="dayRows"></tbody></table></div>
       </section>
 
-      <section class="panel full-panel">
-        <div class="panel-head">
-          <div><div class="week-label">StaffMe source rows</div><h2>Hourly data preview</h2><p>Only hourly rows captured from StaffMe appear here.</p></div>
-          <span class="tag tag-neutral" id="rowCount"></span>
-        </div>
-        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
-      </section>
       </div>
 
       <section id="historyView" class="history-view" hidden>
@@ -716,6 +709,21 @@
           </div>
           <div id="contractHistoryCards"></div>
         </div>
+      </section>
+
+      <section id="staffMeDataView" class="staffme-data-view" hidden>
+      <div class="sync-banner">
+        <div><strong id="syncTitle">Waiting for StaffMe hourly data</strong><span id="syncDetail">Keep the StaffMe Hourly AHT table open, then refresh this dashboard.</span></div>
+        <div class="sync-status" id="syncStatus">WAITING</div>
+      </div>
+
+      <section class="panel full-panel">
+        <div class="panel-head">
+          <div><div class="week-label">StaffMe source rows</div><h2>Hourly data preview</h2><p>Only hourly rows captured from StaffMe appear here.</p></div>
+          <span class="tag tag-neutral" id="rowCount"></span>
+        </div>
+        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
+      </section>
       </section>
     </section>
   </main>
@@ -1699,22 +1707,29 @@
     }
 
     function updateDashboardView() {
+      const active = dashboardView === 'active';
       const history = dashboardView === 'history';
+      const staffMeData = dashboardView === 'staffme';
       const activeView = document.getElementById('activeContractView');
       const historyView = document.getElementById('historyView');
+      const staffMeDataView = document.getElementById('staffMeDataView');
       const activeTab = document.getElementById('activeContractTab');
       const historyTab = document.getElementById('contractHistoryTab');
-      if (!activeView || !historyView || !activeTab || !historyTab) return;
-      activeView.hidden = history;
+      const staffMeDataTab = document.getElementById('staffMeDataTab');
+      if (!activeView || !historyView || !staffMeDataView || !activeTab || !historyTab || !staffMeDataTab) return;
+      activeView.hidden = !active;
       historyView.hidden = !history;
-      activeTab.classList.toggle('active', !history);
+      staffMeDataView.hidden = !staffMeData;
+      activeTab.classList.toggle('active', active);
       historyTab.classList.toggle('active', history);
-      activeTab.setAttribute('aria-selected', String(!history));
+      staffMeDataTab.classList.toggle('active', staffMeData);
+      activeTab.setAttribute('aria-selected', String(active));
       historyTab.setAttribute('aria-selected', String(history));
+      staffMeDataTab.setAttribute('aria-selected', String(staffMeData));
     }
 
     function setDashboardView(view) {
-      dashboardView = view === 'history' ? 'history' : 'active';
+      dashboardView = view === 'history' ? 'history' : view === 'staffme' ? 'staffme' : 'active';
       renderContractHistory();
       updateDashboardView();
     }
@@ -2912,6 +2927,7 @@
 
     document.getElementById('activeContractTab').addEventListener('click', function() { setDashboardView('active'); });
     document.getElementById('contractHistoryTab').addEventListener('click', function() { setDashboardView('history'); });
+    document.getElementById('staffMeDataTab').addEventListener('click', function() { setDashboardView('staffme'); });
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
     document.getElementById('manualAddBtn').addEventListener('click', openManualEntry);
     document.getElementById('manualAddTopBtn').addEventListener('click', openManualEntry);
