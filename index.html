@@ -2232,7 +2232,7 @@
       const outside = Math.max(0, Number(entry.hours || 0) - Number(entry.coverageHours || 0));
       if (Number(entry.adherenceHours || 0) > 0) badges.push('<span class="tag tag-adherence">Weekend adherence</span>');
       if (Number(entry.coverageHours || 0) > 0) badges.push('<span class="tag tag-coverage">InCoverage</span>');
-      if (outside > 0) badges.push('<span class="tag tag-neutral">Outside duty / Other Task</span>');
+      if (outside > 0) badges.push('<span class="tag tag-neutral">Outside</span>');
       return badges.join('');
     }
 
@@ -2242,7 +2242,7 @@
       if (Number(entry.adherenceHours || 0) > 0) parts.push(hours(entry.adherenceHours) + 'h adherence');
       const outside = Math.max(0, Number(entry.hours || 0) - Number(entry.coverageHours || 0));
       if (outside > 0) parts.push(hours(outside) + 'h outside');
-      return parts.length ? parts.join(' · ') : 'Outside duty / Other Task';
+      return parts.length ? parts.join(' · ') : 'Outside';
     }
 
     function renderManualEntries() {
@@ -2376,7 +2376,7 @@
           '<form id="manualForm">' +
             '<div id="manualEntryRows"></div>' +
             '<button type="button" class="btn manual-add-row" id="addManualRow">＋ Add another entry</button>' +
-            '<div class="field-help">Choose Outside duty / Other Task, InCoverage, or Weekend adherence for each line. To split one task across categories, add another line with the same date. Every date can be changed.</div>' +
+            '<div class="field-help">Choose Outside, InCoverage, or Weekend adherence for each line. To split one task across categories, add another line with the same date. Every date can be changed.</div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelManual">Cancel</button><button type="submit" class="btn btn-primary">Add hours</button></div>' +
           '</form>' +
         '</div></div>';
@@ -2394,12 +2394,12 @@
             '<div class="field"><label>Date</label><input data-manual-date type="date" value="' + escapeHtml(dateValue || today) + '" required></div>' +
             '<div class="field"><label>Total work hours</label><input data-manual-hours type="number" min=".01" step=".01" value="' + escapeHtml(hoursValue || '') + '" placeholder="e.g. 2.67" required></div>' +
             '<div class="field"><label>Classification</label><select data-manual-category>' +
-              '<option value="outside"' + (safeCategory === 'outside' ? ' selected' : '') + '>Outside duty / Other Task</option>' +
+              '<option value="outside"' + (safeCategory === 'outside' ? ' selected' : '') + '>Outside</option>' +
               '<option value="coverage"' + (safeCategory === 'coverage' ? ' selected' : '') + '>InCoverage</option>' +
               '<option value="adherence"' + (safeCategory === 'adherence' ? ' selected' : '') + '>Weekend adherence</option>' +
             '</select></div>' +
           '</div>' +
-          '<div class="manual-entry-actions"><input data-manual-note type="text" maxlength="240" value="' + escapeHtml(noteValue || '') + '" placeholder="Note (optional)"><button type="button" class="btn btn-quiet manual-entry-remove" data-remove-manual-row>Remove</button></div>';
+          '<div class="manual-entry-actions"><input data-manual-note type="text" maxlength="240" value="' + escapeHtml(noteValue || '') + '" placeholder="E.g. Other Task"><button type="button" class="btn btn-quiet manual-entry-remove" data-remove-manual-row>Remove</button></div>';
         rowsRoot.appendChild(row);
         updateRemoveButtons();
       }
