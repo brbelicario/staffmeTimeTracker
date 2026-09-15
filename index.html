@@ -987,7 +987,7 @@
         const saved = JSON.parse(raw);
         state.settings = mergeSettings(saved.settings);
         const savedSource = saved.source || 'local';
-        const savedRows = normalizeRows(saved.rows || []);
+        const savedRows = dedupeRows(normalizeRows(saved.rows || []));
         const isDemoProfile = savedSource === 'demo' || savedRows.some(function(row) {
           return String(row.agent || '').toLowerCase() === 'demo agent';
         });
