@@ -421,11 +421,10 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Agreement term totals</div><h2 id="contractTitle">Agreement term not set</h2><p id="contractSubtitle">Enter the agreement dates in Schedule settings to calculate the contract calendar.</p></div>
+          <div><div class="week-label">Current average view</div><h2 id="contractTitle">Agreement term not set</h2></div>
         </div>
-        <div class="contract-total-grid" id="contractSummary"></div>
-        <div class="week-label average-label">Monthly average view</div>
-        <p class="muted average-help">Completed agreement weeks use saved email values when available. Current and future weeks use live StaffMe plus manual totals; averages are calculated per agreement week against the weekly targets.</p>
+        <div class="week-label average-label">Current averages</div>
+        <p class="muted average-help">Total work includes all available data. Current averages use only agreement weeks with data; future or zero-data weeks are excluded.</p>
         <div class="contract-total-grid" id="contractAverage"></div>
         <div id="contractHistory"></div>
         <div class="table-scroll">
@@ -1566,7 +1565,6 @@
       document.getElementById('weekTitle').textContent = 'Week of ' + formatDate(summary.start);
       const termIsValid = Boolean(range && !range.invalid);
       document.getElementById('contractTitle').textContent = termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Agreement term not set';
-      document.getElementById('contractSubtitle').textContent = termIsValid ? 'Inclusive agreement period. Weekly rows below use seven-day agreement weeks.' : 'Enter the agreement dates in Schedule settings to calculate the contract calendar.';
       const hasRows = state.rows.length > 0;
       const tableFound = Boolean(state.helperStatus && state.helperStatus.tableFound);
       const parsedRows = state.helperStatus ? Number(state.helperStatus.parsedRows || 0) : 0;
@@ -1631,26 +1629,26 @@
       const officialSummary = summarizeOfficialWeeks(officialWeeks);
       renderReportedWeeks(agreementWeeks);
       if (termIsValid) {
-        document.getElementById('contractSummary').innerHTML = [
-          ['Total work hours', officialSummary.work],
-          ['Total in coverage', officialSummary.coverage],
-          ['Total weekend adherence', officialSummary.adherence]
-        ].map(function(item) {
-          return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong></div>';
-        }).join('');
+        const availableWeeks = officialWeeks.filter(function(week) {
+          return Number(week.displayWork || 0) > 0 ||
+            Number(week.displayCoverage || 0) > 0 ||
+            Number(week.displayAdherence || 0) > 0;
+        });
+        const weekCount = availableWeeks.length;
+        const averageCoverage = weekCount
+          ? availableWeeks.reduce(function(total, week) { return total + Number(week.displayCoverage || 0); }, 0) / weekCount
+          : 0;
+        const averageAdherence = weekCount
+          ? availableWeeks.reduce(function(total, week) { return total + Number(week.displayAdherence || 0); }, 0) / weekCount
+          : 0;
 
-        const weekCount = officialWeeks.length || 1;
         document.getElementById('contractAverage').innerHTML = [
-          ['Total work hours', officialSummary.work, 'Completed weeks use reported email values when entered.'],
-          ['Average InCoverage', officialSummary.coverage / weekCount, 'Target ' + hours(state.settings.targets.coverage) + 'h per agreement week.'],
-          ['Average weekend adherence', officialSummary.adherence / weekCount, 'Target ' + hours(state.settings.targets.weekend) + 'h per agreement week.']
+          ['Total work hours', officialSummary.work, 'All available StaffMe, manual, and reported work in the agreement term.'],
+          ['Current Average InCoverage', averageCoverage, 'Based on ' + weekCount + ' agreement data week' + (weekCount === 1 ? '' : 's') + '. Target ' + hours(state.settings.targets.coverage) + 'h per week.'],
+          ['Current Average weekend adherence', averageAdherence, 'Based on ' + weekCount + ' agreement data week' + (weekCount === 1 ? '' : 's') + '. Target ' + hours(state.settings.targets.weekend) + 'h per week.']
         ].map(function(item) {
           return '<div class="contract-total"><span>' + item[0] + '</span><strong>' + hours(item[1]) + 'h</strong><small>' + item[2] + '</small></div>';
         }).join('');
-      } else {
-        document.getElementById('contractSummary').innerHTML = '<div class="empty">Set an agreement term to calculate contract totals.</div>';
-        document.getElementById('contractAverage').innerHTML = '<div class="empty">Set an agreement term to calculate monthly averages.</div>';
-      }
 
       renderContractHistory();
 
