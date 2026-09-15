@@ -701,7 +701,7 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Contract calendar</div><h2>Adherence calendar</h2><p>Each row is grouped by its contract date. Overnight hours stay with the shift that started the previous evening.</p></div>
+          <div><div class="week-label">Contract calendar</div><h2>Adherence calendar</h2><p>Each row uses the current calendar date shown by StaffMe, including overnight rows after midnight.</p></div>
         </div>
         <div id="contractCalendar"></div>
       </section>
@@ -727,10 +727,10 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
-          <div><div class="week-label">Hourly source rows</div><h2>Hourly data preview</h2><p>Dates use the contract date so these rows match the calendar; times remain the original StaffMe times.</p></div>
+          <div><div class="week-label">Hourly source rows</div><h2>Hourly data preview</h2><p>Dates use the current calendar date shown by StaffMe so these rows match the calendar.</p></div>
           <span class="tag tag-neutral" id="rowCount"></span>
         </div>
-        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Contract date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
+        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
       </section>
       </section>
 
@@ -1355,8 +1355,14 @@
       }
 
       const groupsByDate = new Map();
-      contractAggregate(range).groups.forEach(function(group) {
-        groupsByDate.set(isoDate(group.date), group);
+      trackedItems().forEach(function(item) {
+        const date = item.date;
+        if (!date || (range && !dateInRange(date, range))) return;
+        const key = isoDate(date);
+        if (!groupsByDate.has(key)) {
+          groupsByDate.set(key, { date: date, total: 0 });
+        }
+        groupsByDate.get(key).total += itemMetrics(item).value;
       });
 
       const monthBlocks = [];
@@ -2089,14 +2095,6 @@
       return date.getTime();
     }
 
-    function contractRowTimestamp(row) {
-      const date = contractDateForRow(row);
-      const minutes = parseMinutes(row && row.time);
-      if (!date || minutes === null) return rowTimestamp(row);
-      date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-      return date.getTime();
-    }
-
     function manualEntryBadges(entry) {
       const badges = [];
       const outside = Math.max(0, Number(entry.hours || 0) - Number(entry.coverageHours || 0));
@@ -2495,19 +2493,18 @@
       }).join('') : '<tr><td colspan="7"><div class="empty">No rows found for the selected week.</div></td></tr>';
 
       const preview = state.rows.slice().sort(function(a, b) {
-        return contractRowTimestamp(b) - contractRowTimestamp(a) || rowKey(b).localeCompare(rowKey(a));
+        return rowTimestamp(b) - rowTimestamp(a) || rowKey(b).localeCompare(rowKey(a));
       });
       document.getElementById('rowCount').textContent = state.rows.length + ' rows';
       document.getElementById('hourRows').innerHTML = preview.length ? preview.map(function(row) {
-        const contractDate = contractDateForRow(row) || calendarDateFor(row);
-        const shiftDate = contractDateForRow(row);
+        const calendarDate = calendarDateFor(row);
         const inDuty = withinDutyWindow(row);
-        const adherence = Boolean(shiftDate && categoryFor(shiftDate) === 'adherence');
+        const adherence = Boolean(calendarDate && categoryFor(calendarDate) === 'adherence');
         const badges = !inDuty
           ? '<span class="tag tag-neutral">Outside duty</span>'
           : (adherence ? '<span class="tag tag-adherence">Weekend adherence</span>' : '') +
             '<span class="tag tag-coverage">InCoverage</span>';
-        return '<tr><td>' + formatDate(contractDate || row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td><div class="row-badges">' + badges + '</div></td></tr>';
+        return '<tr><td>' + formatDate(calendarDate || row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td><div class="row-badges">' + badges + '</div></td></tr>';
       }).join('') : '<tr><td colspan="4"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
 
        renderContractStatus(range);
