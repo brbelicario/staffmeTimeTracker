@@ -248,6 +248,13 @@
     .field label { display: block; font-weight: 800; font-size: .78rem; margin-bottom: 7px; }
     .field-help { color: var(--muted); font-size: .75rem; margin-top: 6px; line-height: 1.45; }
     .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .manual-entry-row { padding: 14px 0; border-bottom: 1px solid #edf0f4; }
+    .manual-entry-row:first-child { padding-top: 0; }
+    .manual-entry-grid { grid-template-columns: 1fr 1fr 1.25fr; }
+    .manual-entry-actions { display: flex; align-items: center; gap: 9px; }
+    .manual-entry-actions input { flex: 1; }
+    .manual-entry-remove { flex: 0 0 auto; }
+    .manual-add-row { margin-top: 12px; }
     .day-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     .day-choice input { position: absolute; opacity: 0; pointer-events: none; }
     .day-choice span { display: block; text-align: center; padding: 10px 4px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-weight: 800; font-size: .78rem; cursor: pointer; }
@@ -281,6 +288,8 @@
       .day-grid { grid-template-columns: repeat(3, 1fr); }
       .sync-banner { align-items: flex-start; flex-direction: column; }
       .field-grid { grid-template-columns: 1fr; }
+      .manual-entry-grid { grid-template-columns: 1fr; }
+      .manual-entry-actions { align-items: stretch; flex-direction: column; }
       .profile-trigger { min-width: 0; padding: 7px; }
       .profile-trigger-copy { display: none; }
     }
@@ -1425,62 +1434,107 @@
     }
 
     function openManualEntry() {
+      const today = isoDate(new Date());
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="manualModalBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">Manual tracking</div><h2>Add manual hours</h2><p class="muted">Enter the total work first, then split the same entry between InCoverage and outside-duty hours.</p></div><button class="close" id="closeManualModal" type="button">×</button></div>' +
+          '<div class="modal-head"><div><div class="eyebrow">Manual tracking</div><h2>Add manual hours</h2><p class="muted">Add one or more dated entries. Each entry has a total and a classification.</p></div><button class="close" id="closeManualModal" type="button">×</button></div>' +
           '<form id="manualForm">' +
-            '<div class="field-grid"><div class="field"><label for="manualDate">Date</label><input id="manualDate" type="date" value="' + isoDate(new Date()) + '" required></div><div class="field"><label for="manualHours">Total work hours</label><input id="manualHours" type="number" min=".01" step=".01" placeholder="e.g. 2.67" required></div></div>' +
-            '<div class="field-grid"><div class="field"><label for="manualCoverage">InCoverage hours</label><input id="manualCoverage" type="number" min="0" step=".01" placeholder="e.g. 1.00" value="0"></div><div class="field"><label for="manualAdherence">Weekend adherence hours</label><input id="manualAdherence" type="number" min="0" step=".01" placeholder="e.g. 1.00" value="0"></div></div>' +
-            '<div class="note manual-breakdown-note"><span>●</span><div><strong>Outside duty / Other Task: <span id="manualOutside">0.00h</span></strong><br><span class="muted">This is calculated as Total work − InCoverage. Weekend adherence is a subset of InCoverage.</span></div></div>' +
-            '<div class="field"><label for="manualNote">Note (optional)</label><input id="manualNote" type="text" maxlength="240" placeholder="e.g. Other Task or late-login adjustment"></div>' +
-            '<div class="field-help">Example: enter 2.67 total hours and 1.00 InCoverage hour. The tracker records the remaining 1.67 hours as outside duty.</div>' +
+            '<div id="manualEntryRows"></div>' +
+            '<button type="button" class="btn manual-add-row" id="addManualRow">＋ Add another entry</button>' +
+            '<div class="field-help">Choose Outside duty / Other Task, InCoverage, or Weekend adherence for each line. To split one task across categories, add another line with the same date. Every date can be changed.</div>' +
             '<div class="modal-actions"><button type="button" class="btn" id="cancelManual">Cancel</button><button type="submit" class="btn btn-primary">Add hours</button></div>' +
           '</form>' +
         '</div></div>';
-      const refreshBreakdown = function() {
-        const total = Math.max(0, optionalNumber(document.getElementById('manualHours').value) || 0);
-        const coverage = Math.max(0, optionalNumber(document.getElementById('manualCoverage').value) || 0);
-        const outside = Math.max(0, total - Math.min(total, coverage));
-        document.getElementById('manualOutside').textContent = hours(outside) + 'h';
-      };
-      document.getElementById('manualHours').addEventListener('input', refreshBreakdown);
-      document.getElementById('manualCoverage').addEventListener('input', refreshBreakdown);
+
+      const rowsRoot = document.getElementById('manualEntryRows');
+      const categories = ['outside', 'coverage', 'adherence'];
+
+      function addManualRow(dateValue, hoursValue, categoryValue, noteValue) {
+        const safeCategory = categories.indexOf(categoryValue) >= 0 ? categoryValue : 'outside';
+        const row = document.createElement('div');
+        row.className = 'manual-entry-row';
+        row.setAttribute('data-manual-entry-row', '');
+        row.innerHTML =
+          '<div class="field-grid manual-entry-grid">' +
+            '<div class="field"><label>Date</label><input data-manual-date type="date" value="' + escapeHtml(dateValue || today) + '" required></div>' +
+            '<div class="field"><label>Total work hours</label><input data-manual-hours type="number" min=".01" step=".01" value="' + escapeHtml(hoursValue || '') + '" placeholder="e.g. 2.67" required></div>' +
+            '<div class="field"><label>Classification</label><select data-manual-category>' +
+              '<option value="outside"' + (safeCategory === 'outside' ? ' selected' : '') + '>Outside duty / Other Task</option>' +
+              '<option value="coverage"' + (safeCategory === 'coverage' ? ' selected' : '') + '>InCoverage</option>' +
+              '<option value="adherence"' + (safeCategory === 'adherence' ? ' selected' : '') + '>Weekend adherence</option>' +
+            '</select></div>' +
+          '</div>' +
+          '<div class="manual-entry-actions"><input data-manual-note type="text" maxlength="240" value="' + escapeHtml(noteValue || '') + '" placeholder="Note (optional)"><button type="button" class="btn btn-quiet manual-entry-remove" data-remove-manual-row>Remove</button></div>';
+        rowsRoot.appendChild(row);
+        updateRemoveButtons();
+      }
+
+      function updateRemoveButtons() {
+        const buttons = Array.from(rowsRoot.querySelectorAll('[data-remove-manual-row]'));
+        buttons.forEach(function(button) { button.hidden = buttons.length === 1; });
+      }
+
+      addManualRow(today, '', 'outside', '');
+
+      document.getElementById('addManualRow').addEventListener('click', function() {
+        const firstDate = rowsRoot.querySelector('[data-manual-date]');
+        addManualRow(firstDate && firstDate.value ? firstDate.value : today, '', 'outside', '');
+      });
+      rowsRoot.addEventListener('click', function(event) {
+        const button = event.target.closest('[data-remove-manual-row]');
+        if (!button) return;
+        const row = button.closest('[data-manual-entry-row]');
+        if (row) row.remove();
+        if (!rowsRoot.children.length) addManualRow(today, '', 'outside', '');
+        updateRemoveButtons();
+      });
+
       document.getElementById('closeManualModal').addEventListener('click', closeModal);
       document.getElementById('cancelManual').addEventListener('click', closeModal);
       document.getElementById('manualModalBackdrop').addEventListener('click', function(event) { if (event.target.id === 'manualModalBackdrop') closeModal(); });
       document.getElementById('manualForm').addEventListener('submit', function(event) {
         event.preventDefault();
-        const date = document.getElementById('manualDate').value;
-        const total = optionalNumber(document.getElementById('manualHours').value);
-        const coverage = optionalNumber(document.getElementById('manualCoverage').value) || 0;
-        const adherence = optionalNumber(document.getElementById('manualAdherence').value) || 0;
-        if (!parseDate(date) || total === null || total <= 0) {
-          showToast('Enter a valid date and a positive total number of hours.');
-          return;
+        const rows = Array.from(rowsRoot.querySelectorAll('[data-manual-entry-row]')).map(function(row) {
+          return {
+            date: row.querySelector('[data-manual-date]').value,
+            total: optionalNumber(row.querySelector('[data-manual-hours]').value),
+            category: row.querySelector('[data-manual-category]').value,
+            note: row.querySelector('[data-manual-note]').value
+          };
+        });
+
+        for (let index = 0; index < rows.length; index += 1) {
+          const entry = rows[index];
+          if (!parseDate(entry.date) || entry.total === null || entry.total <= 0) {
+            showToast('Enter a valid date and positive total hours for entry ' + (index + 1) + '.');
+            return;
+          }
+          if (categories.indexOf(entry.category) < 0) {
+            showToast('Choose a valid classification for entry ' + (index + 1) + '.');
+            return;
+          }
         }
-        if (coverage < 0 || coverage > total) {
-          showToast('InCoverage hours must be between 0 and the total work hours.');
-          return;
-        }
-        if (adherence < 0 || adherence > coverage) {
-          showToast('Weekend adherence hours cannot be greater than InCoverage hours.');
-          return;
-        }
-        const category = adherence > 0 ? 'adherence' : coverage > 0 ? 'coverage' : 'outside';
-        state.manualEntries = normalizeManualEntries(state.manualEntries.concat([{
-          id: makeId('manual'),
-          date: date,
-          hours: total,
-          coverageHours: coverage,
-          adherenceHours: adherence,
-          category: category,
-          note: document.getElementById('manualNote').value
-        }]));
+
+        const newEntries = rows.map(function(entry) {
+          const isCoverage = entry.category === 'coverage' || entry.category === 'adherence';
+          const isAdherence = entry.category === 'adherence';
+          return {
+            id: makeId('manual'),
+            date: entry.date,
+            hours: entry.total,
+            coverageHours: isCoverage ? entry.total : 0,
+            adherenceHours: isAdherence ? entry.total : 0,
+            category: entry.category,
+            note: entry.note
+          };
+        });
+
+        state.manualEntries = normalizeManualEntries(state.manualEntries.concat(newEntries));
         saveProfile();
         queueRemoteSave();
         closeModal();
         render();
-        showToast('Manual hours added.');
+        showToast(newEntries.length === 1 ? 'Manual hours added.' : newEntries.length + ' manual entries added.');
       });
     }
 
