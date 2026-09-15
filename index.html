@@ -425,6 +425,25 @@
     .row-update-popover strong { color: #553d1e; font-size: .76rem; }
     .row-update-popover span { display: block; }
     .row-update-popover small { color: #9a7747; font-size: .68rem; }
+    .hourly-week-controls { display: grid; gap: 10px; margin-bottom: 16px; }
+    .hourly-week-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+    .hourly-week-tab {
+      min-height: 52px; display: grid; gap: 3px; align-content: center; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 12px; color: var(--muted); background: #f7f9fc;
+      text-align: left; font-size: .78rem; font-weight: 900; transition: border .18s, background .18s, color .18s, transform .18s;
+    }
+    .hourly-week-tab:hover:not(:disabled) { border-color: rgba(35,168,199,.55); color: var(--ink); background: #f0f9fb; transform: translateY(-1px); }
+    .hourly-week-tab.active { border-color: var(--cyan); color: #fff; background: linear-gradient(135deg, var(--navy), var(--navy-2)); box-shadow: 0 6px 14px rgba(24,41,68,.14); }
+    .hourly-week-tab:disabled { color: #aab5c3; background: #f1f3f6; cursor: not-allowed; opacity: .82; }
+    .hourly-week-tab span { line-height: 1.15; }
+    .hourly-week-tab small { color: inherit; opacity: .76; font-size: .68rem; font-weight: 700; line-height: 1.15; }
+    .hourly-week-meta { color: var(--muted); font-size: .78rem; }
+    .hourly-pagination { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; }
+    .hourly-page-summary { color: var(--muted); font-size: .75rem; }
+    .hourly-page-controls { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+    .hourly-page-btn { min-width: 34px; min-height: 34px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: #fff; font-size: .74rem; font-weight: 850; }
+    .hourly-page-btn:hover:not(:disabled), .hourly-page-btn.active { border-color: var(--cyan); color: #fff; background: var(--navy); }
+    .hourly-page-btn:disabled { color: #aab5c3; background: #f3f5f8; cursor: not-allowed; }
     .hour-table { min-width: 680px; table-layout: fixed; }
     .hour-table th:nth-child(1), .hour-table td:nth-child(1) { width: 22%; }
     .hour-table th:nth-child(2), .hour-table td:nth-child(2) { width: 17%; }
@@ -464,6 +483,11 @@
       .top-navigation .view-tab:last-child { min-width: 0; }
       .top-navigation .tab-icon { width: 14px; height: 14px; }
       .top-navigation .tab-icon svg { width: 14px; height: 14px; }
+      .hourly-week-tabs { gap: 5px; }
+      .hourly-week-tab { min-height: 48px; padding: 7px 8px; font-size: .73rem; }
+      .hourly-week-tab small { font-size: .64rem; }
+      .hourly-pagination { align-items: flex-start; flex-direction: column; }
+      .hourly-page-controls { justify-content: flex-start; }
       .shell { width: 92vw; padding-top: 20px; padding-bottom: 42px; }
       .login-card { padding: 28px 22px; }
       .form-row, .dashboard-head { align-items: stretch; flex-direction: column; }
@@ -751,7 +775,12 @@
           <div><div class="week-label">Hourly source rows</div><h2>Hourly data preview</h2><p>Dates use the current calendar date shown by StaffMe so these rows match the calendar.</p></div>
           <span class="tag tag-neutral" id="rowCount"></span>
         </div>
+        <div class="hourly-week-controls">
+          <div id="hourlyWeekTabs" class="hourly-week-tabs" role="tablist" aria-label="Hourly data weeks"></div>
+          <div id="hourlyWeekMeta" class="hourly-week-meta"></div>
+        </div>
         <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
+        <div id="hourlyPagination" class="hourly-pagination" aria-label="Hourly data pages"></div>
       </section>
       </section>
 
@@ -851,6 +880,9 @@
     let contractEndTimer = null;
     let contractPromptShownKey = '';
     let dashboardView = 'active';
+    let hourlySelectedWeek = 1;
+    let hourlyPage = 1;
+    const HOURLY_ROWS_PER_PAGE = 100;
     const dashboardScrollPositions = {
       active: 0,
       hourly: 0,
@@ -2437,6 +2469,107 @@
       });
     }
 
+    function hourlyWeekRanges(range) {
+      if (!range || range.invalid) return [];
+      const weeks = [];
+      for (let index = 1; index <= 4; index += 1) {
+        const start = addDays(range.start, (index - 1) * 7);
+        if (start > range.end) {
+          weeks.push({ index: index, start: start, end: null, exists: false });
+          continue;
+        }
+        let end = addDays(start, 6);
+        if (index === 4 || end > range.end) end = new Date(range.end);
+        weeks.push({ index: index, start: start, end: end, exists: true });
+      }
+      return weeks;
+    }
+
+    function localToday() {
+      const today = new Date();
+      today.setHours(12, 0, 0, 0);
+      return today;
+    }
+
+    function hourlyWeekRows(week) {
+      if (!week || !week.exists) return [];
+      return state.rows.filter(function(row) {
+        const date = calendarDateFor(row);
+        return date && date >= week.start && date <= week.end;
+      }).sort(function(a, b) {
+        return rowTimestamp(b) - rowTimestamp(a) || rowKey(b).localeCompare(rowKey(a));
+      });
+    }
+
+    function renderHourlyData(range) {
+      const tabsRoot = document.getElementById('hourlyWeekTabs');
+      const metaRoot = document.getElementById('hourlyWeekMeta');
+      const paginationRoot = document.getElementById('hourlyPagination');
+      const rowsRoot = document.getElementById('hourRows');
+      const rowCountRoot = document.getElementById('rowCount');
+      if (!tabsRoot || !metaRoot || !paginationRoot || !rowsRoot || !rowCountRoot) return;
+
+      const weeks = hourlyWeekRanges(range);
+      const today = localToday();
+      const firstEnabled = weeks.find(function(week) { return week.exists && today >= week.start; });
+      let selected = weeks.find(function(week) { return week.index === hourlySelectedWeek; });
+      if (!selected || !selected.exists || today < selected.start) selected = firstEnabled || null;
+      if (selected && selected.index !== hourlySelectedWeek) {
+        hourlySelectedWeek = selected.index;
+        hourlyPage = 1;
+      }
+      if (!selected) {
+        hourlySelectedWeek = 1;
+        hourlyPage = 1;
+      }
+
+      const selectedRows = selected ? hourlyWeekRows(selected) : [];
+      const totalPages = Math.max(1, Math.ceil(selectedRows.length / HOURLY_ROWS_PER_PAGE));
+      hourlyPage = Math.min(Math.max(1, hourlyPage), totalPages);
+      const startIndex = (hourlyPage - 1) * HOURLY_ROWS_PER_PAGE;
+      const pageRows = selectedRows.slice(startIndex, startIndex + HOURLY_ROWS_PER_PAGE);
+      rowCountRoot.textContent = state.rows.length + ' stored rows';
+
+      tabsRoot.innerHTML = weeks.map(function(week) {
+        const enabled = week.exists && today >= week.start;
+        const count = enabled ? hourlyWeekRows(week).length + ' rows' : (week.exists ? 'Upcoming' : 'Not in contract');
+        const active = Boolean(selected && selected.index === week.index);
+        const rangeLabel = week.exists ? weekDateRange(week.start, week.end) : '—';
+        return '<button type="button" class="hourly-week-tab' + (active ? ' active' : '') + '" role="tab" aria-selected="' + active + '" aria-controls="hourRows" data-hourly-week="' + week.index + '"' + (enabled ? '' : ' disabled') + ' title="' + escapeHtml(enabled ? rangeLabel : (week.exists ? 'Available when the current date reaches this week.' : 'This contract has no dates in this week.')) + '"><span>Week ' + week.index + '</span><small>' + count + '</small></button>';
+      }).join('');
+
+      if (!selected) {
+        metaRoot.textContent = range && range.invalid ? 'Set valid contract dates to organize hourly rows by contract week.' : 'Set contract dates to organize hourly rows by contract week.';
+        rowsRoot.innerHTML = '<tr><td colspan="4"><div class="empty">No contract week is available yet.</div></td></tr>';
+        paginationRoot.innerHTML = '';
+        return;
+      }
+
+      metaRoot.textContent = 'Week ' + selected.index + ' · ' + weekDateRange(selected.start, selected.end) + ' · ' + selectedRows.length + ' stored row' + (selectedRows.length === 1 ? '' : 's');
+      rowsRoot.innerHTML = pageRows.length ? pageRows.map(function(row) {
+        const calendarDate = calendarDateFor(row);
+        const inDuty = withinDutyWindow(row);
+        const adherence = Boolean(calendarDate && categoryFor(calendarDate) === 'adherence');
+        const badges = (!inDuty
+          ? '<span class="tag tag-neutral">Outside duty</span>'
+          : (adherence ? '<span class="tag tag-adherence">Weekend adherence</span>' : '') +
+            '<span class="tag tag-coverage">InCoverage</span>') + rowUpdateNotice(row);
+        return '<tr><td>' + formatDate(calendarDate || row.date) + '</td><td>' + escapeHtml(row.time) + '</td><td>' + hours(row.workedHours) + 'h</td><td><div class="row-badges">' + badges + '</div></td></tr>';
+      }).join('') : '<tr><td colspan="4"><div class="empty">No StaffMe hourly rows are stored for this week.</div></td></tr>';
+
+      if (selectedRows.length <= HOURLY_ROWS_PER_PAGE) {
+        paginationRoot.innerHTML = '';
+        return;
+      }
+      const pageButtons = [];
+      for (let page = 1; page <= totalPages; page += 1) {
+        pageButtons.push('<button type="button" class="hourly-page-btn' + (page === hourlyPage ? ' active' : '') + '" data-hourly-page="' + page + '" aria-label="Page ' + page + '" aria-current="' + (page === hourlyPage ? 'page' : 'false') + '">' + page + '</button>');
+      }
+      const firstShown = startIndex + 1;
+      const lastShown = Math.min(startIndex + HOURLY_ROWS_PER_PAGE, selectedRows.length);
+      paginationRoot.innerHTML = '<div class="hourly-page-summary">Showing ' + firstShown + '–' + lastShown + ' of ' + selectedRows.length + ' rows</div><div class="hourly-page-controls"><button type="button" class="hourly-page-btn" data-hourly-page="prev"' + (hourlyPage === 1 ? ' disabled' : '') + '>Previous</button>' + pageButtons.join('') + '<button type="button" class="hourly-page-btn" data-hourly-page="next"' + (hourlyPage === totalPages ? ' disabled' : '') + '>Next</button></div>';
+    }
+
     function render() {
       const loggedIn = Boolean(state.email);
       document.getElementById('loginView').hidden = loggedIn;
@@ -2588,20 +2721,7 @@
         return '<tr><td>' + formatDate(group.date) + '</td><td><span class="tag ' + tagClass + '">' + tagLabel + '</span></td><td>' + hours(group.total) + 'h</td><td>' + hours(group.coverage) + 'h</td><td>' + hours(outside) + 'h</td><td>' + hours(group.adherence) + 'h</td><td>' + manual + '</td></tr>';
       }).join('') : '<tr><td colspan="7"><div class="empty">No rows found for the selected week.</div></td></tr>';
 
-      const preview = state.rows.slice().sort(function(a, b) {
-        return rowTimestamp(b) - rowTimestamp(a) || rowKey(b).localeCompare(rowKey(a));
-      });
-      document.getElementById('rowCount').textContent = state.rows.length + ' rows';
-      document.getElementById('hourRows').innerHTML = preview.length ? preview.map(function(row) {
-        const calendarDate = calendarDateFor(row);
-        const inDuty = withinDutyWindow(row);
-        const adherence = Boolean(calendarDate && categoryFor(calendarDate) === 'adherence');
-        const badges = (!inDuty
-          ? '<span class="tag tag-neutral">Outside duty</span>'
-          : (adherence ? '<span class="tag tag-adherence">Weekend adherence</span>' : '') +
-            '<span class="tag tag-coverage">InCoverage</span>') + rowUpdateNotice(row);
-        return '<tr><td>' + formatDate(calendarDate || row.date) + '</td><td>' + row.time + '</td><td>' + hours(row.workedHours) + 'h</td><td><div class="row-badges">' + badges + '</div></td></tr>';
-      }).join('') : '<tr><td colspan="4"><div class="empty">No StaffMe hourly rows received yet.</div></td></tr>';
+      renderHourlyData(range);
 
        renderContractStatus(range);
        scheduleContractEndPrompt(range);
@@ -3144,6 +3264,22 @@
     document.getElementById('manualAddBtn').addEventListener('click', openManualEntry);
     document.getElementById('manualAddTopBtn').addEventListener('click', openManualEntry);
     document.getElementById('saveReportedBtn').addEventListener('click', saveReportedValues);
+    document.getElementById('hourlyWeekTabs').addEventListener('click', function(event) {
+      const button = event.target.closest('[data-hourly-week]');
+      if (!button || button.disabled) return;
+      hourlySelectedWeek = Number(button.getAttribute('data-hourly-week')) || 1;
+      hourlyPage = 1;
+      render();
+    });
+    document.getElementById('hourlyPagination').addEventListener('click', function(event) {
+      const button = event.target.closest('[data-hourly-page]');
+      if (!button || button.disabled) return;
+      const value = button.getAttribute('data-hourly-page');
+      if (value === 'prev') hourlyPage -= 1;
+      else if (value === 'next') hourlyPage += 1;
+      else hourlyPage = Number(value) || 1;
+      render();
+    });
 
     function requestStaffMeRows() {
       window.postMessage({ type: 'STAFFME_REQUEST_DATA' }, '*');
