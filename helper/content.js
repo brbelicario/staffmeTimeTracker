@@ -2,6 +2,7 @@
   const STORAGE_KEY = "staffmeHourlyRows";
   const LAST_SYNC_KEY = "staffmeHourlyLastSync";
   const STATUS_KEY = "staffmeHourlyStatus";
+  const CONSENT_KEY = "staffmeHelperConsentV1";
 
   const referrerHost = (() => {
     try {
@@ -197,7 +198,103 @@
     }, "*");
   }
 
+
+  async function getStoredConsent() {
+    const stored = await chrome.storage.local.get(CONSENT_KEY);
+    return stored[CONSENT_KEY] === true;
+  }
+
+  function signalConsentToPageHook() {
+    window.postMessage({
+      type: "STAFFME_HELPER_CONSENT_GRANTED"
+    }, "*");
+  }
+
+  function showConsentPrompt() {
+    return new Promise((resolve) => {
+      const host = document.createElement("div");
+      host.id = "smtracker-consent-prompt";
+      host.style.position = "fixed";
+      host.style.inset = "0";
+      host.style.zIndex = "2147483647";
+
+      const shadow = host.attachShadow({ mode: "closed" });
+      shadow.innerHTML = [
+        "<style>",
+        ":host{all:initial;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}",
+        ".backdrop{align-items:center;background:rgba(15,29,52,.42);display:flex;inset:0;justify-content:center;padding:20px;position:fixed}",
+        ".dialog{background:#fff;border:1px solid #d8e2ed;border-radius:16px;box-shadow:0 18px 48px rgba(15,29,52,.25);color:#18263f;max-width:480px;padding:24px;width:100%}",
+        ".eyebrow{color:#078eae;font-size:11px;font-weight:800;letter-spacing:.12em;margin-bottom:8px;text-transform:uppercase}",
+        "h2{font-size:21px;line-height:1.25;margin:0 0 12px}",
+        "p{font-size:14px;line-height:1.55;margin:10px 0}",
+        ".muted{color:#596a82}",
+        "a{color:#087c9c;font-weight:700}",
+        ".buttons{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}",
+        "button{border:0;border-radius:9px;cursor:pointer;font:600 14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:11px 15px}",
+        ".decline{background:#edf2f7;color:#26354d}",
+        ".allow{background:#243957;color:#fff}",
+        "</style>",
+        "<div class='backdrop'>",
+        "<section class='dialog' role='dialog' aria-modal='true' aria-labelledby='smtracker-consent-title'>",
+        "<div class='eyebrow'>SMTracker by B. Belicario</div>",
+        "<h2 id='smtracker-consent-title'>Allow time-tracking data access?</h2>",
+        "<p>SMTracker reads the visible StaffMe hourly table to calculate your work hours. It stores the rows in this browser and makes them available to your SMTracker dashboard when you refresh data.</p>",
+        "<p class='muted'>It does not read passwords or cookies. Read the <a href='https://staffmetimetracker.pages.dev/privacy-policy.html' target='_blank' rel='noopener'>privacy policy</a> before continuing.</p>",
+        "<div class='buttons'>",
+        "<button class='decline' type='button' data-action='decline'>Not now</button>",
+        "<button class='allow' type='button' data-action='allow'>Allow and continue</button>",
+        "</div>",
+        "</section>",
+        "</div>"
+      ].join("");
+
+      const finish = (allowed) => {
+        host.remove();
+        resolve(allowed);
+      };
+
+      shadow.querySelector("[data-action='decline']").addEventListener("click", () => finish(false));
+      shadow.querySelector("[data-action='allow']").addEventListener("click", () => finish(true));
+      shadow.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") finish(false);
+      });
+
+      (document.body || document.documentElement).appendChild(host);
+      shadow.querySelector("[data-action='allow']").focus();
+    });
+  }
+
+  async function ensureStaffMeConsent() {
+    if (await getStoredConsent()) {
+      signalConsentToPageHook();
+      return true;
+    }
+
+    if (window.top !== window) {
+      return new Promise((resolve) => {
+        const onChanged = (changes, areaName) => {
+          if (areaName !== "local" || !changes[CONSENT_KEY] || changes[CONSENT_KEY].newValue !== true) {
+            return;
+          }
+          chrome.storage.onChanged.removeListener(onChanged);
+          signalConsentToPageHook();
+          resolve(true);
+        };
+        chrome.storage.onChanged.addListener(onChanged);
+      });
+    }
+
+    const allowed = await showConsentPrompt();
+    if (!allowed) return false;
+
+    await chrome.storage.local.set({ [CONSENT_KEY]: true });
+    signalConsentToPageHook();
+    return true;
+  }
+
   async function storeRows(rows, tableFound) {
+    if (!(await getStoredConsent())) return;
+
     const normalizedRows = (Array.isArray(rows) ? rows : [])
       .filter((row) => row && row.date && row.time)
       .map((row) => ({
@@ -246,25 +343,41 @@
       await storeRows(event.data.rows || [], true);
     });
 
-    window.postMessage({ type: "STAFFME_REQUEST_NETWORK_DATA" }, "*");
-
-    let lastText = "";
-    const scan = async () => {
-      const root = findHourlyRoot();
-      const text = root ? clean(root.innerText) : "";
-      if (text && text !== lastText) {
-        lastText = text;
-        await scanStaffMe(root);
+    (async () => {
+      const allowed = await ensureStaffMeConsent();
+      if (!allowed) {
+        await chrome.storage.local.set({
+          [STATUS_KEY]: {
+            installed: true,
+            tableFound: false,
+            parsedRows: 0,
+            storedRows: 0,
+            awaitingConsent: true
+          }
+        });
+        return;
       }
-    };
 
-    window.setTimeout(scan, 1500);
-    window.setInterval(scan, 2500);
-    new MutationObserver(scan).observe(document.documentElement, {
-      subtree: true,
-      childList: true,
-      characterData: true
-    });
+      window.postMessage({ type: "STAFFME_REQUEST_NETWORK_DATA" }, "*");
+
+      let lastText = "";
+      const scan = async () => {
+        const root = findHourlyRoot();
+        const text = root ? clean(root.innerText) : "";
+        if (text && text !== lastText) {
+          lastText = text;
+          await scanStaffMe(root);
+        }
+      };
+
+      window.setTimeout(scan, 1500);
+      window.setInterval(scan, 2500);
+      new MutationObserver(scan).observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        characterData: true
+      });
+    })();
   }
 
   if (isTrackerPage) {
@@ -275,19 +388,30 @@
       const stored = await chrome.storage.local.get([
         STORAGE_KEY,
         LAST_SYNC_KEY,
-        STATUS_KEY
+        STATUS_KEY,
+        CONSENT_KEY
       ]);
+      const hasConsent = stored[CONSENT_KEY] === true;
+      const rows = hasConsent ? (stored[STORAGE_KEY] || []) : [];
 
       window.postMessage({
         type: "STAFFME_HOURLY_DATA",
-        rows: stored[STORAGE_KEY] || [],
-        lastSync: stored[LAST_SYNC_KEY] || null,
-        helperStatus: stored[STATUS_KEY] || {
-          installed: true,
-          tableFound: false,
-          parsedRows: 0,
-          storedRows: (stored[STORAGE_KEY] || []).length
-        }
+        rows,
+        lastSync: hasConsent ? (stored[LAST_SYNC_KEY] || null) : null,
+        helperStatus: hasConsent
+          ? (stored[STATUS_KEY] || {
+              installed: true,
+              tableFound: false,
+              parsedRows: 0,
+              storedRows: rows.length
+            })
+          : {
+              installed: true,
+              tableFound: false,
+              parsedRows: 0,
+              storedRows: 0,
+              awaitingConsent: true
+            }
       }, "*");
     });
 
