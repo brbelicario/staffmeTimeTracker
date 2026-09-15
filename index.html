@@ -249,6 +249,9 @@
     .pay-status { padding: 4px 8px; border-radius: 999px; font-weight: 900; }
     .pay-status.pending { color: #8a5b2d; background: #fff1df; }
     .pay-status.reached { color: #217a54; background: #e9f7ef; }
+    .pay-rate-status { padding: 4px 8px; border-radius: 999px; font-weight: 850; }
+    .pay-rate-status.live { color: #217a54; background: #e9f7ef; }
+    .pay-rate-status.muted { color: #657286; background: #edf1f6; }
     .bar-label span:last-child { color: var(--muted); font-size: .77rem; }
     .day-table, .hour-table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 7px; border-bottom: 1px solid #edf0f4; text-align: left; font-size: .78rem; }
@@ -577,7 +580,15 @@
       adherenceDays: [0, 1],
       targets: { work: 45, coverage: 40, weekend: 16 },
       caps: { daily: 12, weekly: 75 },
-      pay: { minimumHours: 180, minimumFee: 360, excessRate: 2, usdToPhp: 58 }
+      pay: {
+        minimumHours: 180,
+        minimumFee: 360,
+        excessRate: 2,
+        usdToPhp: 58,
+        exchangeRateMode: 'automatic',
+        exchangeRateUpdatedAt: '',
+        exchangeRateSource: ''
+      }
     };
 
     let state = {
@@ -593,11 +604,16 @@
       helperStatus: null,
       remoteStatus: 'unknown',
       remoteReady: false,
-      user: null
+      user: null,
+      exchangeRateStatus: 'idle',
+      exchangeRateError: ''
     };
 
     let remoteSaveTimer = null;
     const AUTO_REFRESH_INTERVAL_MS = 60000;
+    const EXCHANGE_RATE_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+    let exchangeRateTimer = null;
+    let exchangeRateRequest = null;
     let autoRefreshTimer = null;
     let autoRefreshCountdownTimer = null;
     let autoRefreshRemaining = 60;
@@ -658,6 +674,7 @@
         state.remoteReady = false;
         state.remoteStatus = 'local-only';
       }
+      startExchangeRateRefresh();
       render();
     }
 
@@ -710,6 +727,8 @@
         state.lastSync = saved.lastSync || null;
         state.autoRefresh = saved.autoRefresh !== false;
         state.helperStatus = null;
+        state.exchangeRateStatus = 'idle';
+        state.exchangeRateError = '';
         if (isDemoProfile) saveProfile();
         return true;
       } catch (error) {
@@ -785,6 +804,108 @@
       return { range: range, groups: Array.from(groups.values()).sort(function(a, b) { return a.date - b.date; }), work: work, coverage: coverage, adherence: adherence };
     }
 
+
+    function exchangeRateMode() {
+      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+      return pay.exchangeRateMode === 'manual' ? 'manual' : 'automatic';
+    }
+
+    function exchangeRateStatusMarkup() {
+      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+      if (exchangeRateMode() === 'manual') {
+        return '<span class="pay-rate-status muted">Manual USD/PHP rate</span>';
+      }
+      if (state.exchangeRateStatus === 'loading') {
+        return '<span class="pay-rate-status muted">Updating automatic rate…</span>';
+      }
+      if (state.exchangeRateStatus === 'ok') {
+        const source = escapeHtml(pay.exchangeRateSource || 'Google Finance');
+        const timestamp = Date.parse(pay.exchangeRateUpdatedAt || '');
+        const when = Number.isFinite(timestamp)
+          ? ' · ' + new Date(timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+          : '';
+        return '<span class="pay-rate-status live">Automatic · ' + source + escapeHtml(when) + '</span>';
+      }
+      if (state.exchangeRateStatus === 'unconfigured') {
+        return '<span class="pay-rate-status muted">Automatic setup needed · using saved rate</span>';
+      }
+      if (state.exchangeRateStatus === 'error') {
+        return '<span class="pay-rate-status muted">Automatic unavailable · using saved rate</span>';
+      }
+      return '<span class="pay-rate-status muted">Automatic rate pending</span>';
+    }
+
+    async function refreshExchangeRate(force) {
+      if (!state.email || exchangeRateMode() === 'manual') return;
+      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+      const updatedAt = Date.parse(pay.exchangeRateUpdatedAt || '');
+      if (!force && state.exchangeRateStatus === 'ok' && Number.isFinite(updatedAt) &&
+          Date.now() - updatedAt < EXCHANGE_RATE_REFRESH_INTERVAL_MS) return;
+      if (exchangeRateRequest) return exchangeRateRequest;
+
+      const requestEmail = state.email;
+      state.exchangeRateStatus = 'loading';
+      state.exchangeRateError = '';
+      render();
+
+      const request = (async function() {
+        try {
+          const response = await fetch('/api/exchange-rate', { cache: 'no-store' });
+          const result = await response.json().catch(function() { return {}; });
+          if (state.email !== requestEmail) return;
+          if (response.status === 503 && result && result.configured === false) {
+            state.exchangeRateStatus = 'unconfigured';
+            state.exchangeRateError = '';
+            render();
+            return;
+          }
+          if (!response.ok || !result.ok) throw new Error(result.error || 'Automatic rate unavailable.');
+          if (exchangeRateMode() !== 'automatic') return;
+          const rate = numberValue(result.rate);
+          if (!(rate > 0 && rate < 1000)) throw new Error('Automatic rate was invalid.');
+          state.settings.pay.usdToPhp = rate;
+          state.settings.pay.exchangeRateUpdatedAt = String(result.updatedAt || new Date().toISOString());
+          state.settings.pay.exchangeRateSource = String(result.source || 'Google Finance');
+          state.exchangeRateStatus = 'ok';
+          state.exchangeRateError = '';
+          saveProfile();
+          queueRemoteSave();
+          render();
+        } catch (error) {
+          if (state.email !== requestEmail) return;
+          state.exchangeRateStatus = 'error';
+          state.exchangeRateError = error.message || 'Automatic rate unavailable.';
+          render();
+        } finally {
+          if (exchangeRateRequest === request) exchangeRateRequest = null;
+        }
+      })();
+      exchangeRateRequest = request;
+      return request;
+    }
+
+    function stopExchangeRateRefresh() {
+      window.clearInterval(exchangeRateTimer);
+      exchangeRateTimer = null;
+      exchangeRateRequest = null;
+    }
+
+    function startExchangeRateRefresh() {
+      stopExchangeRateRefresh();
+      if (!state.email || exchangeRateMode() === 'manual') {
+        if (exchangeRateMode() === 'manual') state.exchangeRateStatus = 'manual';
+        return;
+      }
+      refreshExchangeRate(false);
+      exchangeRateTimer = window.setInterval(function() {
+        if (!state.email || exchangeRateMode() === 'manual') {
+          stopExchangeRateRefresh();
+          return;
+        }
+        refreshExchangeRate(false);
+      }, EXCHANGE_RATE_REFRESH_INTERVAL_MS);
+    }
+
     function renderPayEstimate(workHours) {
       const root = document.getElementById('payEstimate');
       if (!root) return;
@@ -805,6 +926,7 @@
         : '<span class="pay-status reached">Minimum hours reached</span>';
       const phpTotalLabel = usdToPhp > 0 ? '₱' + money(phpTotal) : 'Set PHP rate';
       const phpMinimumLabel = usdToPhp > 0 ? '₱' + money(phpMinimum) : '—';
+      const rateStatus = exchangeRateStatusMarkup();
 
       root.innerHTML =
         '<div class="pay-estimate">' +
@@ -817,7 +939,7 @@
             '<div class="pay-estimate-item"><span>Excess hours</span><strong>' + hours(excessHours) + 'h × $' + money(excessRate) + ' = $' + money(excessPay) + '</strong></div>' +
             '<div class="pay-estimate-item"><span>Pay rule</span><strong>' + hours(minimumHours) + 'h minimum</strong></div>' +
           '</div>' +
-          '<div class="pay-note">' + threshold + '<span>Formula: minimum fee + excess hours × excess rate.</span></div>' +
+          '<div class="pay-note">' + threshold + rateStatus + '<span>Formula: minimum fee + excess hours × excess rate.</span></div>' +
         '</div>';
     }
 
@@ -2049,6 +2171,7 @@
     function openSettings() {
       const days = [0,1,2,3,4,5,6];
       const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+      const payMode = pay.exchangeRateMode === 'manual' ? 'manual' : 'automatic';
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="modalBackdrop"><div class="modal">' +
           '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Tracker Settings</h2></div><button class="close" id="closeModal">×</button></div>' +
@@ -2065,8 +2188,9 @@
             '<div class="field-help">The default limits come from the StaffMe guideline: 12 hours per day and 75 hours per contract coverage week.</div>' +
             '<div class="week-label settings-section-label">Pay estimate</div>' +
             '<div class="field-grid"><div class="field"><label for="minimumPaidHours">Minimum paid hours</label><input id="minimumPaidHours" type="number" min="0" step=".01" value="' + pay.minimumHours + '" required></div><div class="field"><label for="minimumFee">Minimum fee (USD)</label><input id="minimumFee" type="number" min="0" step=".01" value="' + pay.minimumFee + '" required></div></div>' +
-            '<div class="field-grid"><div class="field"><label for="excessRate">Excess/additional hourly rate (USD)</label><input id="excessRate" type="number" min="0" step=".01" value="' + pay.excessRate + '" required></div><div class="field"><label for="usdToPhp">USD to PHP conversion rate</label><input id="usdToPhp" type="number" min="0" step=".01" value="' + pay.usdToPhp + '" required></div></div>' +
-            '<div class="field-help">Example: 180 hours = $360 minimum. Every hour above 180 earns $2. Update the USD to PHP rate when needed.</div>' +
+            '<div class="field-grid"><div class="field"><label for="excessRate">Excess/additional hourly rate (USD)</label><input id="excessRate" type="number" min="0" step=".01" value="' + pay.excessRate + '" required></div><div class="field"><label for="usdToPhp">Manual/fallback USD to PHP rate</label><input id="usdToPhp" type="number" min="0" step=".01" value="' + pay.usdToPhp + '" required></div></div>' +
+            '<div class="field-grid"><div class="field"><label for="exchangeRateMode">USD to PHP rate source</label><select id="exchangeRateMode"><option value="automatic"' + (payMode === 'automatic' ? ' selected' : '') + '>Automatic (Google Finance)</option><option value="manual"' + (payMode === 'manual' ? ' selected' : '') + '>Manual</option></select></div><div class="field-help">Automatic mode refreshes about once per hour through the one-time Google Finance setup. The saved fallback rate is used if the service is unavailable.</div></div>' +
+            '<div class="field-help">Example: 180 hours = $360 minimum. Every hour above 180 earns $2. The fallback rate is only used when automatic mode cannot update.</div>' +
             '<div class="modal-actions"><button type="button" class="btn btn-quiet" id="newContractBtn">New contract</button><span class="modal-spacer"></span><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
           '</form>' +
         '</div></div>';
@@ -2083,6 +2207,7 @@
         const minimumFee = numberValue(document.getElementById('minimumFee').value);
         const excessRate = numberValue(document.getElementById('excessRate').value);
         const usdToPhp = numberValue(document.getElementById('usdToPhp').value);
+        const exchangeRateMode = document.getElementById('exchangeRateMode').value === 'manual' ? 'manual' : 'automatic';
         if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both agreement dates.'); return; }
         if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Agreement end date must be on or after the start date.'); return; }
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
@@ -2106,12 +2231,16 @@
           minimumHours: minimumPaidHours,
           minimumFee: minimumFee,
           excessRate: excessRate,
-          usdToPhp: usdToPhp
+          usdToPhp: usdToPhp,
+          exchangeRateMode: exchangeRateMode,
+          exchangeRateUpdatedAt: exchangeRateMode === 'automatic' ? (pay.exchangeRateUpdatedAt || '') : '',
+          exchangeRateSource: exchangeRateMode === 'automatic' ? (pay.exchangeRateSource || '') : ''
         };
         saveProfile();
         queueRemoteSave();
         closeModal();
         render();
+        startExchangeRateRefresh();
         showToast('Tracker Settings saved.');
       });
     }
@@ -2144,12 +2273,15 @@
         state.lastSync = null;
         state.autoRefresh = true;
         state.helperStatus = null;
+        state.exchangeRateStatus = 'idle';
+        state.exchangeRateError = '';
         saveProfile();
       }
       state.remoteReady = false;
       state.remoteStatus = 'loading';
       render();
       startAutoRefresh();
+      startExchangeRateRefresh();
       window.setTimeout(function() {
         refreshStaffMeData(false);
         pullRemoteProfile();
@@ -2234,6 +2366,9 @@
       state.remoteReady = false;
       state.remoteStatus = 'unknown';
       stopAutoRefresh();
+      stopExchangeRateRefresh();
+      state.exchangeRateStatus = 'idle';
+      state.exchangeRateError = '';
       closeModal();
       render();
     });
