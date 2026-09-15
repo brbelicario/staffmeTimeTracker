@@ -1,17 +1,14 @@
 {
   "manifest_version": 3,
   "name": "SMTracker by B. Belicario",
-  "version": "0.3.0",
-  "description": "Captures the visible StaffMe hourly table locally for the time tracker.",
+  "version": "0.3.1",
+  "description": "Reads the visible StaffMe hourly table and makes the rows available to the user's time-tracking dashboard.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://script.google.com/*",
     "https://script.googleusercontent.com/*",
-    "https://htmlpreview.github.io/*",
-    "https://brbelicario.github.io/*",
-    "https://raw.githubusercontent.com/*",
     "https://staffmetimetracker.pages.dev/*"
   ],
   "content_scripts": [
@@ -42,9 +39,6 @@
     },
     {
       "matches": [
-        "https://htmlpreview.github.io/*",
-        "https://brbelicario.github.io/*",
-        "https://raw.githubusercontent.com/*",
         "https://staffmetimetracker.pages.dev/*"
       ],
       "js": [
