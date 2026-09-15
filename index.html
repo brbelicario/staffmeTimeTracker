@@ -250,7 +250,6 @@
     .pay-status.pending { color: #8a5b2d; background: #fff1df; }
     .pay-status.reached { color: #217a54; background: #e9f7ef; }
     .bar-label span:last-child { color: var(--muted); font-size: .77rem; }
-    .bar-label span:last-child { color: var(--muted); font-size: .77rem; }
     .day-table, .hour-table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 7px; border-bottom: 1px solid #edf0f4; text-align: left; font-size: .78rem; }
     th { color: var(--muted); font-size: .69rem; letter-spacing: .06em; text-transform: uppercase; }
@@ -323,6 +322,13 @@
     .toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; padding: 13px 16px; color: white; background: var(--navy); border-radius: 12px; box-shadow: var(--shadow); font-size: .84rem; }
 
     .row-badges { display: flex; flex-wrap: wrap; gap: 5px; min-width: 170px; }
+    .hour-table { min-width: 680px; table-layout: fixed; }
+    .hour-table th:nth-child(1), .hour-table td:nth-child(1) { width: 22%; }
+    .hour-table th:nth-child(2), .hour-table td:nth-child(2) { width: 17%; }
+    .hour-table th:nth-child(3), .hour-table td:nth-child(3) { width: 18%; }
+    .hour-table th:last-child, .hour-table td:last-child {
+      width: 43%; text-align: left; padding-left: 14px;
+    }
     .auth-tabs { display: flex; gap: 7px; padding: 5px; margin: 24px 0 18px; border-radius: 13px; background: #f1f4f8; }
     .auth-tab { flex: 1; border: 0; border-radius: 9px; padding: 10px 12px; color: var(--muted); background: transparent; font-weight: 850; }
     .auth-tab.active { color: white; background: var(--navy); box-shadow: 0 5px 12px rgba(24,41,68,.16); }
@@ -1829,7 +1835,7 @@
       document.getElementById('setupList').innerHTML =
         '<div class="setup-item"><span>Agreement term</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
         '<div class="setup-item"><span>Duty window</span><strong>' + state.settings.start + ' – ' + state.settings.end + '</strong></div>' +
-        '<div class="setup-item"><span>Adherence days</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
+        '<div class="setup-item"><span>Weekend adherence</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Daily cap reminder</span><strong>' + hours(state.settings.caps.daily) + 'h</strong></div>' +
         '<div class="setup-item"><span>Contract weekly cap</span><strong>' + hours(state.settings.caps.weekly) + 'h</strong></div>' +
@@ -2050,7 +2056,7 @@
             '<div class="field-grid"><div class="field"><label for="contractStart">Agreement starts</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Agreement ends</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
             '<div class="field-help">The dates are inclusive. To start a different contract without losing this one, use New contract below.</div>' +
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
-            '<div class="field"><label>Weekend adherence days</label><div class="day-grid">' + days.map(function(day) {
+            '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
             }).join('') + '</div><div class="field-help">A shift is classified by its starting day. All other days become coverage days automatically.</div></div>' +
             '<div class="field-grid"><div class="field"><label for="workTarget">Work Hours target</label><input id="workTarget" type="number" min="0" step=".01" value="' + state.settings.targets.work + '"></div><div class="field"><label for="coverageTarget">InCoverage target</label><input id="coverageTarget" type="number" min="0" step=".01" value="' + state.settings.targets.coverage + '"></div></div>' +
