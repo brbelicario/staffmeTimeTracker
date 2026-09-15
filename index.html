@@ -453,7 +453,7 @@
     <section id="dashboardView" hidden>
       <div class="dashboard-head">
         <div>
-          <div class="eyebrow">StaffMe time tracker</div>
+          <div class="eyebrow">StaffMe time tracker · Unofficial, not affiliated with StaffMe</div>
           <h1>Work Hours Dashboard</h1>
           <div class="profile-line"><span class="profile-dot"></span><span id="profileEmail"></span><span>·</span><span id="weekRange"></span></div>
         </div>
@@ -2177,8 +2177,8 @@
         '<div class="modal-backdrop" id="modalBackdrop"><div class="modal">' +
           '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Tracker Settings</h2></div><button class="close" id="closeModal">×</button></div>' +
           '<form id="settingsForm">' +
-            '<div class="field-grid"><div class="field"><label for="contractStart">Agreement starts</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Agreement ends</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
-            '<div class="field-help">The dates are inclusive. To start a different contract without losing this one, use New contract below.</div>' +
+            '<div class="field-grid"><div class="field"><label for="contractStart">Contract start date</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Contract end date</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
+            '<div class="field-help">These contract dates are inclusive. To start a different contract without losing this one, use New contract below.</div>' +
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
@@ -2219,7 +2219,7 @@
         const usdToPhp = numberValue(document.getElementById('usdToPhp').value);
         const exchangeRateMode = document.getElementById('exchangeRateMode').value === 'manual' ? 'manual' : 'automatic';
         if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both agreement dates.'); return; }
-        if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Agreement end date must be on or after the start date.'); return; }
+        if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Contract end date must be on or after the start date.'); return; }
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
         if (minimumPaidHours <= 0) { showToast('Minimum paid hours must be greater than zero.'); return; }
         if (minimumFee < 0 || excessRate < 0 || usdToPhp <= 0) { showToast('Enter valid non-negative pay values and a PHP conversion rate.'); return; }
