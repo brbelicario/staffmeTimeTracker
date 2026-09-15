@@ -25,10 +25,7 @@
   })();
 
   const trackerHosts = new Set([
-    "htmlpreview.github.io",
-    "brbelicario.github.io",
-    "staffmetimetracker.pages.dev",
-    "raw.githubusercontent.com"
+    "staffmetimetracker.pages.dev"
   ]);
 
   const staffMeHosts = new Set(["script.google.com", "script.googleusercontent.com"]);
