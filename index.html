@@ -227,6 +227,29 @@
     .week-chip span { display: block; color: var(--muted); font-size: .72rem; margin-top: 4px; }
     .bar-row { margin: 14px 0; }
     .bar-label { display: flex; justify-content: space-between; font-size: .83rem; margin-bottom: 7px; }
+    .pay-estimate {
+      margin-top: 20px; padding: 16px; border: 1px solid rgba(35,168,199,.24);
+      border-radius: 15px; background: linear-gradient(135deg, #f4fbfd, #fbfcfe);
+    }
+    .pay-estimate-head {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;
+    }
+    .pay-estimate-head h3 { margin: 4px 0 3px; font-size: 1rem; }
+    .pay-estimate-head p { margin: 0; color: var(--muted); font-size: .75rem; }
+    .pay-amount { text-align: right; white-space: nowrap; }
+    .pay-amount strong { display: block; color: var(--navy); font-size: 1.45rem; letter-spacing: -.04em; }
+    .pay-amount span { display: block; margin-top: 2px; color: var(--green); font-size: .9rem; font-weight: 900; }
+    .pay-estimate-grid {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 14px;
+    }
+    .pay-estimate-item { padding: 10px; border-radius: 11px; background: rgba(255,255,255,.78); }
+    .pay-estimate-item span { display: block; color: var(--muted); font-size: .7rem; }
+    .pay-estimate-item strong { display: block; margin-top: 5px; font-size: .8rem; }
+    .pay-note { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; color: var(--muted); font-size: .72rem; }
+    .pay-status { padding: 4px 8px; border-radius: 999px; font-weight: 900; }
+    .pay-status.pending { color: #8a5b2d; background: #fff1df; }
+    .pay-status.reached { color: #217a54; background: #e9f7ef; }
+    .bar-label span:last-child { color: var(--muted); font-size: .77rem; }
     .bar-label span:last-child { color: var(--muted); font-size: .77rem; }
     .day-table, .hour-table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 7px; border-bottom: 1px solid #edf0f4; text-align: left; font-size: .78rem; }
@@ -282,6 +305,7 @@
     .field { margin: 14px 0; }
     .field label { display: block; font-weight: 800; font-size: .78rem; margin-bottom: 7px; }
     .field-help { color: var(--muted); font-size: .75rem; margin-top: 6px; line-height: 1.45; }
+    .settings-section-label { margin-top: 20px; }
     .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .manual-entry-row { padding: 14px 0; border-bottom: 1px solid #edf0f4; }
     .manual-entry-row:first-child { padding-top: 0; }
@@ -323,6 +347,9 @@
       .dashboard-sync-group .refresh-actions > .btn { flex: 1; }
       .dashboard-actions-group .dashboard-tool-group-label { padding-left: 0; }
       .dashboard-actions-group .btn { flex: 1; }
+      .pay-estimate-head { align-items: stretch; flex-direction: column; }
+      .pay-amount { text-align: left; }
+      .pay-estimate-grid { grid-template-columns: 1fr; }
       .metric-grid { grid-template-columns: 1fr; }
       .week-summary { grid-template-columns: 1fr 1fr; }
       .day-grid { grid-template-columns: repeat(3, 1fr); }
@@ -437,7 +464,7 @@
           <div class="dashboard-tool-group dashboard-actions-group" aria-label="Tracker actions">
             <span class="dashboard-tool-group-label">Actions</span>
             <button class="btn" id="manualAddTopBtn">Add manual hours</button>
-            <button class="btn btn-outline" id="settingsBtn">Schedule settings</button>
+            <button class="btn btn-outline" id="settingsBtn">Tracker Settings</button>
           </div>
         </div>
       </div>
@@ -456,6 +483,7 @@
           </div>
           <div class="week-summary" id="weekSummary"></div>
           <div id="metricBars"></div>
+          <div id="payEstimate"></div>
         </section>
 
         <section class="panel">
@@ -542,7 +570,8 @@
       contractEnd: '',
       adherenceDays: [0, 1],
       targets: { work: 45, coverage: 40, weekend: 16 },
-      caps: { daily: 12, weekly: 75 }
+      caps: { daily: 12, weekly: 75 },
+      pay: { minimumHours: 180, minimumFee: 360, excessRate: 2, usdToPhp: 58 }
     };
 
     let state = {
@@ -588,6 +617,7 @@
       const merged = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), settings || {});
       merged.targets = Object.assign({}, DEFAULT_SETTINGS.targets, (settings || {}).targets || {});
       merged.caps = Object.assign({}, DEFAULT_SETTINGS.caps, (settings || {}).caps || {});
+      merged.pay = Object.assign({}, DEFAULT_SETTINGS.pay, (settings || {}).pay || {});
       merged.adherenceDays = Array.isArray(merged.adherenceDays) && merged.adherenceDays.length
         ? merged.adherenceDays.map(Number).filter(function(day) { return day >= 0 && day <= 6; })
         : DEFAULT_SETTINGS.adherenceDays.slice();
@@ -749,6 +779,42 @@
       return { range: range, groups: Array.from(groups.values()).sort(function(a, b) { return a.date - b.date; }), work: work, coverage: coverage, adherence: adherence };
     }
 
+    function renderPayEstimate(workHours) {
+      const root = document.getElementById('payEstimate');
+      if (!root) return;
+      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+      const totalHours = Math.max(0, numberValue(workHours));
+      const minimumHours = Math.max(0, numberValue(pay.minimumHours));
+      const minimumFee = Math.max(0, numberValue(pay.minimumFee));
+      const excessRate = Math.max(0, numberValue(pay.excessRate));
+      const usdToPhp = Math.max(0, numberValue(pay.usdToPhp));
+      const excessHours = Math.max(0, totalHours - minimumHours);
+      const excessPay = excessHours * excessRate;
+      const usdTotal = minimumFee + excessPay;
+      const phpTotal = usdTotal * usdToPhp;
+      const phpMinimum = minimumFee * usdToPhp;
+      const minimumRemaining = Math.max(0, minimumHours - totalHours);
+      const threshold = minimumRemaining > 0
+        ? '<span class="pay-status pending">' + hours(minimumRemaining) + 'h until minimum</span>'
+        : '<span class="pay-status reached">Minimum hours reached</span>';
+      const phpTotalLabel = usdToPhp > 0 ? '₱' + money(phpTotal) : 'Set PHP rate';
+      const phpMinimumLabel = usdToPhp > 0 ? '₱' + money(phpMinimum) : '—';
+
+      root.innerHTML =
+        '<div class="pay-estimate">' +
+          '<div class="pay-estimate-head">' +
+            '<div><div class="week-label">Pay estimate</div><h3>Possible contract pay</h3><p>Based on ' + hours(totalHours) + 'h total work in this agreement term.</p></div>' +
+            '<div class="pay-amount"><strong>$' + money(usdTotal) + '</strong><span>' + phpTotalLabel + '</span></div>' +
+          '</div>' +
+          '<div class="pay-estimate-grid">' +
+            '<div class="pay-estimate-item"><span>Minimum fee</span><strong>$' + money(minimumFee) + ' · ' + phpMinimumLabel + '</strong></div>' +
+            '<div class="pay-estimate-item"><span>Excess hours</span><strong>' + hours(excessHours) + 'h × $' + money(excessRate) + ' = $' + money(excessPay) + '</strong></div>' +
+            '<div class="pay-estimate-item"><span>Pay rule</span><strong>' + hours(minimumHours) + 'h minimum</strong></div>' +
+          '</div>' +
+          '<div class="pay-note">' + threshold + '<span>Formula: minimum fee + excess hours × excess rate.</span></div>' +
+        '</div>';
+    }
+
     function contractWeeks(range) {
       if (!range || range.invalid) return [];
       const weeks = [];
@@ -859,7 +925,7 @@
         return;
       }
       if (range.invalid) {
-        root.innerHTML = '<div class="empty">The agreement dates are invalid. Check the start and end dates in Schedule settings.</div>';
+        root.innerHTML = '<div class="empty">The agreement dates are invalid. Check the start and end dates in Tracker Settings.</div>';
         return;
       }
 
@@ -909,6 +975,32 @@
       const date = parseDate(value);
       if (!date) return String(value || '—');
       return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    function shortDate(value) {
+      const date = parseDate(value);
+      if (!date) return String(value || '—');
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    function weekDateRange(start, end) {
+      const startDate = parseDate(start);
+      const endDate = parseDate(end);
+      if (!startDate || !endDate) return formatDate(start) + ' – ' + formatDate(end);
+      if (startDate.getFullYear() === endDate.getFullYear() && startDate.getMonth() === endDate.getMonth()) {
+        return shortDate(startDate) + ' – ' + endDate.getDate();
+      }
+      if (startDate.getFullYear() === endDate.getFullYear()) {
+        return shortDate(startDate) + ' – ' + endDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      }
+      return formatDate(startDate) + ' – ' + formatDate(endDate);
+    }
+
+    function agreementWeekTitle(start, range) {
+      const week = contractWeeks(range).find(function(item) {
+        return isoDate(item.start) === isoDate(start);
+      });
+      return week ? 'Week ' + week.index + ' (' + weekDateRange(week.start, week.end) + ')' : 'Week of ' + formatDate(start);
     }
 
     function parseMinutes(value) {
@@ -1341,6 +1433,13 @@
       return Number(value || 0).toFixed(2);
     }
 
+    function money(value) {
+      return Number(value || 0).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
     function dayName(day) {
       return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][day];
     }
@@ -1625,7 +1724,7 @@
       end.setDate(end.getDate() + 6);
       document.getElementById('profileEmail').textContent = state.email;
       document.getElementById('weekRange').textContent = formatDate(summary.start) + ' – ' + formatDate(end);
-      document.getElementById('weekTitle').textContent = 'Week of ' + formatDate(summary.start);
+      document.getElementById('weekTitle').textContent = agreementWeekTitle(summary.start, range);
       const termIsValid = Boolean(range && !range.invalid);
       document.getElementById('contractTitle').textContent = termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Agreement term not set';
       const hasRows = state.rows.length > 0;
@@ -1690,6 +1789,7 @@
       const agreementWeeks = contractWeeks(range);
       const officialWeeks = officialAgreementWeeks(range);
       const officialSummary = summarizeOfficialWeeks(officialWeeks);
+      renderPayEstimate(termIsValid ? officialSummary.work : contractSummary.work);
       renderReportedWeeks(agreementWeeks);
       if (termIsValid) {
         const availableWeeks = officialWeeks.filter(function(week) {
@@ -1942,9 +2042,10 @@
 
     function openSettings() {
       const days = [0,1,2,3,4,5,6];
+      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="modalBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Schedule settings</h2></div><button class="close" id="closeModal">×</button></div>' +
+          '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Tracker Settings</h2></div><button class="close" id="closeModal">×</button></div>' +
           '<form id="settingsForm">' +
             '<div class="field-grid"><div class="field"><label for="contractStart">Agreement starts</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Agreement ends</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
             '<div class="field-help">The dates are inclusive. To start a different contract without losing this one, use New contract below.</div>' +
@@ -1956,6 +2057,10 @@
             '<div class="field"><label for="weekendTarget">Weekend adherence target</label><input id="weekendTarget" type="number" min="0" step=".01" value="' + state.settings.targets.weekend + '"></div>' +
             '<div class="field-grid"><div class="field"><label for="dailyCap">Daily work cap reminder</label><input id="dailyCap" type="number" min="0" step=".01" value="' + state.settings.caps.daily + '"></div><div class="field"><label for="weeklyCap">Contract weekly work cap</label><input id="weeklyCap" type="number" min="0" step=".01" value="' + state.settings.caps.weekly + '"></div></div>' +
             '<div class="field-help">The default limits come from the StaffMe guideline: 12 hours per day and 75 hours per contract coverage week.</div>' +
+            '<div class="week-label settings-section-label">Pay estimate</div>' +
+            '<div class="field-grid"><div class="field"><label for="minimumPaidHours">Minimum paid hours</label><input id="minimumPaidHours" type="number" min="0" step=".01" value="' + pay.minimumHours + '" required></div><div class="field"><label for="minimumFee">Minimum fee (USD)</label><input id="minimumFee" type="number" min="0" step=".01" value="' + pay.minimumFee + '" required></div></div>' +
+            '<div class="field-grid"><div class="field"><label for="excessRate">Excess/additional hourly rate (USD)</label><input id="excessRate" type="number" min="0" step=".01" value="' + pay.excessRate + '" required></div><div class="field"><label for="usdToPhp">USD to PHP conversion rate</label><input id="usdToPhp" type="number" min="0" step=".01" value="' + pay.usdToPhp + '" required></div></div>' +
+            '<div class="field-help">Example: 180 hours = $360 minimum. Every hour above 180 earns $2. Update the USD to PHP rate when needed.</div>' +
             '<div class="modal-actions"><button type="button" class="btn btn-quiet" id="newContractBtn">New contract</button><span class="modal-spacer"></span><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
           '</form>' +
         '</div></div>';
@@ -1968,9 +2073,15 @@
         const selected = Array.from(document.querySelectorAll('input[name="adherenceDay"]:checked')).map(function(input) { return Number(input.value); });
         const contractStart = document.getElementById('contractStart').value;
         const contractEnd = document.getElementById('contractEnd').value;
+        const minimumPaidHours = numberValue(document.getElementById('minimumPaidHours').value);
+        const minimumFee = numberValue(document.getElementById('minimumFee').value);
+        const excessRate = numberValue(document.getElementById('excessRate').value);
+        const usdToPhp = numberValue(document.getElementById('usdToPhp').value);
         if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both agreement dates.'); return; }
         if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Agreement end date must be on or after the start date.'); return; }
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
+        if (minimumPaidHours <= 0) { showToast('Minimum paid hours must be greater than zero.'); return; }
+        if (minimumFee < 0 || excessRate < 0 || usdToPhp <= 0) { showToast('Enter valid non-negative pay values and a PHP conversion rate.'); return; }
         state.settings.contractStart = contractStart;
         state.settings.contractEnd = contractEnd;
         state.settings.start = document.getElementById('startTime').value;
@@ -1985,11 +2096,17 @@
           daily: numberValue(document.getElementById('dailyCap').value),
           weekly: numberValue(document.getElementById('weeklyCap').value)
         };
+        state.settings.pay = {
+          minimumHours: minimumPaidHours,
+          minimumFee: minimumFee,
+          excessRate: excessRate,
+          usdToPhp: usdToPhp
+        };
         saveProfile();
         queueRemoteSave();
         closeModal();
         render();
-        showToast('Schedule settings saved.');
+        showToast('Tracker Settings saved.');
       });
     }
 
