@@ -56,6 +56,13 @@
       font-size: 17px;
     }
     .brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
+    .top-navigation {
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      flex: 0 1 auto; min-width: 0; padding: 4px;
+      border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.76);
+    }
+    .top-navigation .view-tab { white-space: nowrap; padding: 8px 11px; font-size: .74rem; }
+    .top-navigation .view-tab.active { box-shadow: 0 5px 12px rgba(24,41,68,.12); }
     .top-actions { display: flex; gap: 9px; align-items: center; }
     .profile-menu { position: relative; }
     .profile-trigger {
@@ -198,7 +205,7 @@
     .view-tab.active { color: #fff; background: var(--navy); }
     .view-tab-count { margin-left: 4px; opacity: .72; font-size: .7rem; }
     .tab-label-short { display: none; }
-    .staffme-data-view { margin-top: 0; }
+    .hourly-data-view, .reports-view { margin-top: 0; }
     .history-view { margin-top: 0; }
     .history-panel { min-height: 220px; }
     .history-group-label { margin: 3px 0 9px; color: var(--cyan); font-size: .75rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
@@ -403,7 +410,12 @@
       .dashboard-sync-group { align-self: stretch; }
     }
     @media (max-width: 680px) {
-      .topbar { min-height: 64px; padding: 0 4vw; }
+      .topbar { min-height: 64px; padding: 8px 4vw 7px; flex-wrap: wrap; gap: 8px 10px; }
+      .brand { min-width: 0; flex: 1 1 auto; }
+      .top-actions { flex: 0 0 auto; }
+      .top-navigation { order: 3; width: 100%; flex: 1 0 100%; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+      .top-navigation::-webkit-scrollbar { display: none; }
+      .top-navigation .view-tab { flex: 1 0 auto; padding: 7px 10px; font-size: .7rem; white-space: nowrap; }
       .shell { width: 92vw; padding-top: 20px; padding-bottom: 42px; }
       .login-card { padding: 28px 22px; }
       .form-row, .dashboard-head { align-items: stretch; flex-direction: column; }
@@ -516,6 +528,12 @@
       <div class="brand-mark">↗</div>
       <div>StaffMe Time Tracker<small>Hourly work dashboard</small></div>
     </div>
+    <nav class="top-navigation" id="topNavigation" hidden role="tablist" aria-label="Tracker views">
+      <button class="view-tab active" id="activeContractTab" type="button" role="tab" aria-selected="true" aria-controls="activeContractView"><span class="tab-label-wide">Active contract</span><span class="tab-label-short">Active</span></button>
+      <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView"><span class="tab-label-wide">Contract history</span><span class="tab-label-short">History</span> <span class="view-tab-count" id="contractHistoryCount">0</span></button>
+      <button class="view-tab" id="hourlyDataTab" type="button" role="tab" aria-selected="false" aria-controls="hourlyDataView"><span class="tab-label-wide">Hourly data</span><span class="tab-label-short">Hourly</span></button>
+      <button class="view-tab" id="reportsTab" type="button" role="tab" aria-selected="false" aria-controls="reportsView"><span class="tab-label-wide">Reports</span><span class="tab-label-short">Reports</span></button>
+    </nav>
     <div class="top-actions" id="topActions" hidden>
       <div class="profile-menu" id="profileMenu">
         <button class="profile-trigger" id="profileBtn" type="button" aria-expanded="false">
@@ -596,7 +614,7 @@
           <div class="profile-line"><span class="profile-dot"></span><span id="profileEmail"></span><span>·</span><span id="weekRange"></span></div>
         </div>
         <div class="head-actions">
-          <div class="dashboard-tool-group dashboard-sync-group" aria-label="StaffMe data sync">
+          <div class="dashboard-tool-group dashboard-sync-group" aria-label="Hourly data sync">
             <span class="dashboard-tool-group-label">Data sync</span>
             <div class="refresh-actions">
               <button class="btn btn-primary" id="refreshBtn" type="button">Refresh data</button>
@@ -616,12 +634,6 @@
           </div>
         </div>
       </div>
-
-      <nav class="view-tabs" role="tablist" aria-label="Tracker views">
-        <button class="view-tab active" id="activeContractTab" type="button" role="tab" aria-selected="true" aria-controls="activeContractView"><span class="tab-label-wide">Active contract</span><span class="tab-label-short">Active</span></button>
-        <button class="view-tab" id="contractHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="historyView"><span class="tab-label-wide">Contract history</span><span class="tab-label-short">History</span> <span class="view-tab-count" id="contractHistoryCount">0</span></button>
-        <button class="view-tab" id="staffMeDataTab" type="button" role="tab" aria-selected="false" aria-controls="staffMeDataView"><span class="tab-label-wide">StaffMe data</span><span class="tab-label-short">Data</span></button>
-      </nav>
 
       <div id="activeContractView">
       <div class="contract-notice" id="contractNotice" hidden></div>
@@ -654,7 +666,49 @@
         <div class="table-scroll"><table class="day-table manual-table"><thead><tr><th>Date</th><th>Work</th><th>Breakdown</th><th>Classification</th><th>Note</th><th></th></tr></thead><tbody id="manualRows"></tbody></table></div>
       </section>
 
+      
+
+      
+
+      
+
       <section class="panel full-panel">
+        <div class="panel-head">
+          <div><div class="week-label">Contract calendar</div><h2>Adherence calendar</h2><p>Each hourly row is classified using its actual calendar date. Overnight rows after midnight belong to that calendar date.</p></div>
+        </div>
+        <div id="contractCalendar"></div>
+      </section>
+
+      
+
+      </div>
+
+      <section id="historyView" class="history-view" hidden>
+        <div class="panel full-panel history-panel">
+          <div class="panel-head">
+            <div><div class="week-label">Contract history</div><h2>Previous contracts</h2><p>Each saved contract keeps its own hours, payment rules, and USD/PHP rate snapshot.</p></div>
+          </div>
+          <div id="contractHistoryCards"></div>
+        </div>
+      </section>
+
+      <section id="hourlyDataView" class="hourly-data-view" hidden>
+      <div class="sync-banner">
+        <div><strong id="syncTitle">Waiting for StaffMe hourly data</strong><span id="syncDetail">Keep the StaffMe Hourly AHT table open, then refresh this dashboard.</span></div>
+        <div class="sync-status" id="syncStatus">WAITING</div>
+      </div>
+
+      <section class="panel full-panel">
+        <div class="panel-head">
+          <div><div class="week-label">Hourly source rows</div><h2>Hourly data preview</h2><p>Only hourly rows captured from StaffMe appear here.</p></div>
+          <span class="tag tag-neutral" id="rowCount"></span>
+        </div>
+        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
+      </section>
+      </section>
+
+      <section id="reportsView" class="reports-view" hidden>
+<section class="panel full-panel">
         <div class="panel-head">
           <div><div class="week-label">Current average view</div><h2 id="contractTitle">Contract dates not set</h2></div>
         </div>
@@ -669,7 +723,7 @@
         </div>
       </section>
 
-      <section class="panel full-panel">
+<section class="panel full-panel">
         <div class="panel-head">
           <div><div class="week-label">Weekly performance email</div><h2>Reported weekly metrics</h2><p>Enter the values from your weekly StaffMe performance email. Completed weeks update the contract totals; current and future weeks remain live tracked totals.</p></div>
         </div>
@@ -678,7 +732,7 @@
         <div class="modal-actions"><button class="btn btn-primary" id="saveReportedBtn" type="button">Save reported values</button></div>
       </section>
 
-      <section class="panel full-panel">
+<section class="panel full-panel">
         <div class="panel-head">
           <div><div class="week-label">Contract coverage cap</div><h2>Weekly work-hour reminder</h2><p>Weeks follow the contract term from its start date in seven-day blocks. Completed weeks use reported email Work Hours when entered; current and future weeks use StaffMe plus manual tracked hours.</p></div>
         </div>
@@ -686,43 +740,11 @@
         <div class="table-scroll"><table class="day-table"><thead><tr><th>Contract week</th><th>Date range</th><th>Weekly work</th><th>Cap</th><th>Status</th></tr></thead><tbody id="capRows"></tbody></table></div>
       </section>
 
-      <section class="panel full-panel">
-        <div class="panel-head">
-          <div><div class="week-label">Contract calendar</div><h2>Adherence calendar</h2><p>Each hourly row is classified using its actual calendar date. Overnight rows after midnight belong to that calendar date.</p></div>
-        </div>
-        <div id="contractCalendar"></div>
-      </section>
-
-      <section class="panel full-panel">
+<section class="panel full-panel">
         <div class="panel-head">
           <div><div class="week-label">Contract daily breakdown</div><h2>Adherence and coverage by shift</h2><p>All captured shift dates inside the contract term.</p></div>
         </div>
         <div class="table-scroll"><table class="day-table"><thead><tr><th>Calendar date</th><th>Classification</th><th>Total work hours</th><th>In coverage</th><th>Outside duty</th><th>Weekend adherence</th><th>Manual / Other Task</th></tr></thead><tbody id="dayRows"></tbody></table></div>
-      </section>
-
-      </div>
-
-      <section id="historyView" class="history-view" hidden>
-        <div class="panel full-panel history-panel">
-          <div class="panel-head">
-            <div><div class="week-label">Contract history</div><h2>Previous contracts</h2><p>Each saved contract keeps its own hours, payment rules, and USD/PHP rate snapshot.</p></div>
-          </div>
-          <div id="contractHistoryCards"></div>
-        </div>
-      </section>
-
-      <section id="staffMeDataView" class="staffme-data-view" hidden>
-      <div class="sync-banner">
-        <div><strong id="syncTitle">Waiting for StaffMe hourly data</strong><span id="syncDetail">Keep the StaffMe Hourly AHT table open, then refresh this dashboard.</span></div>
-        <div class="sync-status" id="syncStatus">WAITING</div>
-      </div>
-
-      <section class="panel full-panel">
-        <div class="panel-head">
-          <div><div class="week-label">StaffMe source rows</div><h2>Hourly data preview</h2><p>Only hourly rows captured from StaffMe appear here.</p></div>
-          <span class="tag tag-neutral" id="rowCount"></span>
-        </div>
-        <div class="table-scroll"><table class="hour-table"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Classification</th></tr></thead><tbody id="hourRows"></tbody></table></div>
       </section>
       </section>
     </section>
@@ -1709,27 +1731,33 @@
     function updateDashboardView() {
       const active = dashboardView === 'active';
       const history = dashboardView === 'history';
-      const staffMeData = dashboardView === 'staffme';
+      const hourly = dashboardView === 'hourly';
+      const reports = dashboardView === 'reports';
       const activeView = document.getElementById('activeContractView');
       const historyView = document.getElementById('historyView');
-      const staffMeDataView = document.getElementById('staffMeDataView');
+      const hourlyView = document.getElementById('hourlyDataView');
+      const reportsView = document.getElementById('reportsView');
       const activeTab = document.getElementById('activeContractTab');
       const historyTab = document.getElementById('contractHistoryTab');
-      const staffMeDataTab = document.getElementById('staffMeDataTab');
-      if (!activeView || !historyView || !staffMeDataView || !activeTab || !historyTab || !staffMeDataTab) return;
+      const hourlyTab = document.getElementById('hourlyDataTab');
+      const reportsTab = document.getElementById('reportsTab');
+      if (!activeView || !historyView || !hourlyView || !reportsView || !activeTab || !historyTab || !hourlyTab || !reportsTab) return;
       activeView.hidden = !active;
       historyView.hidden = !history;
-      staffMeDataView.hidden = !staffMeData;
+      hourlyView.hidden = !hourly;
+      reportsView.hidden = !reports;
       activeTab.classList.toggle('active', active);
       historyTab.classList.toggle('active', history);
-      staffMeDataTab.classList.toggle('active', staffMeData);
+      hourlyTab.classList.toggle('active', hourly);
+      reportsTab.classList.toggle('active', reports);
       activeTab.setAttribute('aria-selected', String(active));
       historyTab.setAttribute('aria-selected', String(history));
-      staffMeDataTab.setAttribute('aria-selected', String(staffMeData));
+      hourlyTab.setAttribute('aria-selected', String(hourly));
+      reportsTab.setAttribute('aria-selected', String(reports));
     }
 
     function setDashboardView(view) {
-      dashboardView = view === 'history' ? 'history' : view === 'staffme' ? 'staffme' : 'active';
+      dashboardView = view === 'history' ? 'history' : view === 'hourly' ? 'hourly' : view === 'reports' ? 'reports' : 'active';
       renderContractHistory();
       updateDashboardView();
     }
@@ -2239,6 +2267,7 @@
       document.getElementById('loginView').hidden = loggedIn;
       document.getElementById('dashboardView').hidden = !loggedIn;
       document.getElementById('topActions').hidden = !loggedIn;
+      document.getElementById('topNavigation').hidden = !loggedIn;
       updateAutoRefreshControls();
       document.getElementById('profileDropdown').hidden = true;
       document.getElementById('profileBtn').setAttribute('aria-expanded', 'false');
@@ -2927,7 +2956,8 @@
 
     document.getElementById('activeContractTab').addEventListener('click', function() { setDashboardView('active'); });
     document.getElementById('contractHistoryTab').addEventListener('click', function() { setDashboardView('history'); });
-    document.getElementById('staffMeDataTab').addEventListener('click', function() { setDashboardView('staffme'); });
+    document.getElementById('hourlyDataTab').addEventListener('click', function() { setDashboardView('hourly'); });
+    document.getElementById('reportsTab').addEventListener('click', function() { setDashboardView('reports'); });
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
     document.getElementById('manualAddBtn').addEventListener('click', openManualEntry);
     document.getElementById('manualAddTopBtn').addEventListener('click', openManualEntry);
