@@ -618,7 +618,7 @@
             <span class="dashboard-tool-group-label">Data sync</span>
             <div class="refresh-actions">
               <button class="btn btn-primary" id="refreshBtn" type="button">Refresh data</button>
-              <div class="auto-refresh-control" title="Request fresh StaffMe data every 60 seconds">
+              <div class="auto-refresh-control" title="Request fresh hourly data every 60 seconds">
                 <label class="auto-refresh-label" for="autoRefreshToggle">
                   <input type="checkbox" id="autoRefreshToggle" checked>
                   <span>Auto-refresh</span>
@@ -3082,7 +3082,7 @@
         render();
         showToast('StaffMe hourly rows refreshed.');
       } catch (error) {
-        showToast('StaffMe data could not be read.');
+        showToast('Hourly data could not be read.');
       }
     });
 
