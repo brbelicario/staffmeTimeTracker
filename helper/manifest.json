@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "StaffMe Time Tracker Helper",
+  "name": "SMTracker by B. Belicario",
   "version": "0.3.0",
   "description": "Captures the visible StaffMe hourly table locally for the time tracker.",
   "permissions": [
