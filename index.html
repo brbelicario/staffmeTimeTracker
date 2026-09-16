@@ -2087,8 +2087,10 @@
       const end = parseMinutes(state.settings.end);
       const time = parseMinutes(row.time);
       if (start === null || end === null || time === null) return true;
-      if (end < start) return time >= start || time <= end;
-      return time >= start && time <= end;
+      // Hourly row timestamps represent the beginning of each hour, so the
+      // duty end belongs to the next outside-duty hour.
+      if (end < start) return time >= start || time < end;
+      return time >= start && time < end;
     }
 
     function weekStart(date) {
