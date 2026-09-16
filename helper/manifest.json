@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SMTracker by B. Belicario",
-  "version": "0.3.1",
-  "description": "Reads the visible StaffMe hourly table and makes the rows available to the user's time-tracking dashboard.",
+  "version": "0.4.0",
+  "description": "Reads the visible StaffMe hourly table and reports connection status to the time-tracking dashboard.",
   "permissions": [
     "storage"
   ],
@@ -18,6 +18,7 @@
         "https://script.googleusercontent.com/*"
       ],
       "js": [
+        "connection-status.js",
         "content.js"
       ],
       "run_at": "document_idle",
@@ -42,6 +43,7 @@
         "https://staffmetimetracker.pages.dev/*"
       ],
       "js": [
+        "connection-status.js",
         "content.js"
       ],
       "run_at": "document_idle",
