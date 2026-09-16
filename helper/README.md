@@ -37,3 +37,6 @@ The extension asks for affirmative permission before reading StaffMe hourly data
 13. Click Refresh data, or leave the dashboard's optional auto-refresh enabled.
 
 The dashboard remains empty until real rows are received from the StaffMe hourly table. If the dashboard reports that the table was detected but no rows were parsed, send that message to the developer; it identifies a page-layout mismatch rather than a missing login.
+## Connection status
+
+Version 0.4.0 also reports, through the extension handshake, whether the tracker dashboard and the exact StaffMe beta tracker page are open and ready. It records only local setup status and does not add access to passwords, cookies, general browsing history, or unrelated page content.
