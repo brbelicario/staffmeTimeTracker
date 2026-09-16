@@ -899,6 +899,7 @@
     let autoRefreshTimer = null;
     let autoRefreshCountdownTimer = null;
     let autoRefreshRemaining = 60;
+    let autoRefreshDeadline = 0;
     let contractEndTimer = null;
     let contractPromptShownKey = '';
     let dashboardView = 'active';
@@ -3420,6 +3421,11 @@
       const countdown = document.getElementById('autoRefreshCountdown');
       if (!toggle || !countdown) return;
       const enabled = Boolean(state.email) && state.autoRefresh !== false;
+      if (enabled && autoRefreshDeadline) {
+        autoRefreshRemaining = Math.max(0, Math.ceil((autoRefreshDeadline - Date.now()) / 1000));
+      } else if (enabled) {
+        autoRefreshRemaining = 60;
+      }
       toggle.checked = enabled;
       toggle.disabled = !state.email;
       countdown.textContent = enabled ? 'In ' + autoRefreshRemaining + 's' : 'Off';
@@ -3433,6 +3439,7 @@
       window.clearInterval(autoRefreshCountdownTimer);
       autoRefreshTimer = null;
       autoRefreshCountdownTimer = null;
+      autoRefreshDeadline = 0;
       autoRefreshRemaining = 60;
       updateAutoRefreshControls();
     }
@@ -3441,24 +3448,25 @@
       window.clearTimeout(autoRefreshTimer);
       autoRefreshTimer = null;
       if (!state.email || state.autoRefresh === false) return;
+      if (!autoRefreshDeadline) autoRefreshDeadline = Date.now() + AUTO_REFRESH_INTERVAL_MS;
+      const delay = Math.max(0, autoRefreshDeadline - Date.now());
       autoRefreshTimer = window.setTimeout(function() {
         autoRefreshTimer = null;
         if (!state.email || state.autoRefresh === false) return;
         refreshStaffMeData(false);
-        scheduleAutoRefresh();
-      }, AUTO_REFRESH_INTERVAL_MS);
+      }, delay);
     }
 
     function startAutoRefresh() {
       stopAutoRefresh();
       if (!state.email || state.autoRefresh === false) return;
 
+      autoRefreshDeadline = Date.now() + AUTO_REFRESH_INTERVAL_MS;
       autoRefreshCountdownTimer = window.setInterval(function() {
         if (!state.email || state.autoRefresh === false) {
           stopAutoRefresh();
           return;
         }
-        autoRefreshRemaining = Math.max(0, autoRefreshRemaining - 1);
         updateAutoRefreshControls();
       }, 1000);
 
@@ -3471,15 +3479,18 @@
       requestStaffMeRows();
       // A data refresh must also force a new exchange-rate request.
       refreshExchangeRate(true);
+      autoRefreshDeadline = Date.now() + AUTO_REFRESH_INTERVAL_MS;
       autoRefreshRemaining = 60;
+      scheduleAutoRefresh();
       updateAutoRefreshControls();
       if (showMessage) showToast('Requesting the latest StaffMe rows...');
     }
 
     function refreshWhenVisible() {
       if (document.visibilityState !== 'visible' || !state.email || state.autoRefresh === false) return;
-      startAutoRefresh();
-      refreshStaffMeData(false);
+      if (!autoRefreshDeadline) startAutoRefresh();
+      else scheduleAutoRefresh();
+      updateAutoRefreshControls();
     }
 
     document.addEventListener('visibilitychange', refreshWhenVisible);
