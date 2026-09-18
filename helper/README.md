@@ -12,6 +12,7 @@ Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance
 - Makes only the identity-matching bucket available when the SMTracker dashboard requests a refresh.
 - Shows the detected StaffMe Beta Tracker identity and blocks rows when a table has no Agent name or contains multiple identities.
 - The dashboard asks new accounts to set contract dates and can link the visible Beta Tracker identity, so rows from multiple Beta Tracker accounts in one browser cannot be mixed into the wrong Time Tracker account.
+- Notifies the Time Tracker dashboard as soon as usable Beta Tracker data is detected, so first-time identity linking does not require a manual dashboard refresh.
 - Shows local connection, setup, and identity status.
 
 ### Local testing tools

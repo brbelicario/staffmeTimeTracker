@@ -912,6 +912,8 @@
     let contractPromptShownKey = '';
     let initialSetupPromptShownKey = '';
     let pendingHourlyImport = null;
+    let helperRefreshPending = false;
+    let helperRefreshReplaceExisting = false;
     let identityWarningShownKey = '';
     let identityPromptDismissedKey = '';
     let dashboardView = 'active';
@@ -1096,6 +1098,7 @@
         state.remoteReady = false;
         state.remoteStatus = 'local-only';
       }
+      flushPendingHelperRefresh();
       startExchangeRateRefresh();
       render();
       window.setTimeout(maybePromptForInitialSetup, 0);
@@ -3692,6 +3695,8 @@
       state.email = String(user.email || '').toLowerCase();
       initialSetupPromptShownKey = '';
       pendingHourlyImport = null;
+      helperRefreshPending = false;
+      helperRefreshReplaceExisting = false;
       identityWarningShownKey = '';
       identityPromptDismissedKey = '';
       state.smIdentityWarning = null;
@@ -3808,6 +3813,8 @@
       state.smIdentityWarning = null;
       state.remoteReady = false;
       state.remoteStatus = 'unknown';
+      helperRefreshPending = false;
+      helperRefreshReplaceExisting = false;
       stopAutoRefresh();
       stopExchangeRateRefresh();
       window.clearTimeout(contractEndTimer);
@@ -3855,6 +3862,24 @@
         expectedSmIdentity: state.smIdentity || '',
         replaceExisting: replaceExisting === true
       }, '*');
+    }
+
+    function requestStaffMeRowsWhenReady(replaceExisting) {
+      if (!state.email) return;
+      if (state.remoteStatus === 'loading') {
+        helperRefreshPending = true;
+        helperRefreshReplaceExisting = helperRefreshReplaceExisting || replaceExisting === true;
+        return;
+      }
+      requestStaffMeRows(replaceExisting);
+    }
+
+    function flushPendingHelperRefresh() {
+      if (!helperRefreshPending || !state.email || state.remoteStatus === 'loading') return;
+      const replaceExisting = helperRefreshReplaceExisting;
+      helperRefreshPending = false;
+      helperRefreshReplaceExisting = false;
+      requestStaffMeRows(replaceExisting);
     }
 
     function updateAutoRefreshControls() {
@@ -3917,7 +3942,7 @@
 
     function refreshStaffMeData(showMessage, replaceExisting) {
       if (!state.email) return;
-      requestStaffMeRows(replaceExisting);
+      requestStaffMeRowsWhenReady(replaceExisting);
       // A data refresh must also force a new exchange-rate request.
       refreshExchangeRate(true);
       autoRefreshDeadline = Date.now() + AUTO_REFRESH_INTERVAL_MS;

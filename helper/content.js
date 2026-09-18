@@ -1029,6 +1029,14 @@
     })();
   }
 
+  if (isTrackerPage && window.top === window) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "local" || extensionInvalidated) return;
+      if (!changes[PROFILES_KEY] && !changes[STORAGE_KEY]) return;
+      window.postMessage({ type: "SMTRACKER_EXTENSION_REFRESH" }, "*");
+    });
+  }
+
   if (isTrackerPage) {
     window.addEventListener("message", (event) => {
       if (event.source !== window || !event.data) return;
