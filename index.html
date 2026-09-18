@@ -1001,6 +1001,16 @@
         .trim();
     }
 
+    function smIdentityTokens(value) {
+      return smIdentityKey(value).split(' ').filter(function(token) { return token.length > 1; });
+    }
+
+    function smIdentitiesMatch(sourceName, expectedName) {
+      const sourceTokens = new Set(smIdentityTokens(sourceName));
+      const expectedTokens = smIdentityTokens(expectedName);
+      return expectedTokens.length > 0 && expectedTokens.every(function(token) { return sourceTokens.has(token); });
+    }
+
     function isSyntheticSmRow(row) {
       return smIdentityKey(row && row.agent) === 'smtracker test';
     }
@@ -1024,9 +1034,8 @@
     }
 
     function rowsForSmIdentity(rows, identity) {
-      const expectedKey = smIdentityKey(identity);
       return (Array.isArray(rows) ? rows : []).filter(function(row) {
-        return isSyntheticSmRow(row) || smIdentityKey(row && row.agent) === expectedKey;
+        return isSyntheticSmRow(row) || smIdentitiesMatch(row && row.agent, identity);
       });
     }
 
@@ -1106,7 +1115,19 @@
             lastSync: state.lastSync
           })
         });
-        if (!response.ok) throw new Error('Cloud sync unavailable');
+        if (!response.ok) {
+          let failure = null;
+          try { failure = await response.json(); } catch (error) {}
+          if (response.status === 409 && failure && failure.code === 'SM_IDENTITY_MISMATCH') {
+            const observed = Array.isArray(failure.observedIdentities) && failure.observedIdentities.length
+              ? failure.observedIdentities.join(', ')
+              : 'a different SM worker';
+            state.smIdentityWarning = { expected: state.smIdentity || 'Linked SM worker', observed: observed };
+            render();
+            showToast('Cloud sync blocked: the SM worker identity does not match this account.');
+          }
+          throw new Error((failure && failure.error) || 'Cloud sync unavailable');
+        }
         if (state.hourlyDataClearPending) {
           state.hourlyDataClearPending = false;
           saveProfile();
@@ -2827,10 +2848,21 @@
       const hasRows = state.rows.length > 0;
       const tableFound = Boolean(state.helperStatus && state.helperStatus.tableFound);
       const parsedRows = state.helperStatus ? Number(state.helperStatus.parsedRows || 0) : 0;
-      const sourceLabel = state.source === 'helper'
+      const identityMismatch = Boolean(state.helperStatus && state.helperStatus.identityMismatch);
+      const detectedIdentity = normalizeSmIdentity(state.helperStatus && (state.helperStatus.observedSmIdentity || state.helperStatus.identity));
+      const identityDetail = identityMismatch
+        ? 'Detected ' + (detectedIdentity || 'a different SM worker') + ', but this dashboard is linked to ' + (state.smIdentity || 'another SM worker') + '. No new rows were imported.'
+        : detectedIdentity
+          ? 'Detected SM worker: ' + detectedIdentity + '.'
+          : '';
+      const sourceLabel = identityMismatch
+        ? 'IDENTITY BLOCKED'
+        : state.source === 'helper'
         ? 'STAFFME DATA'
         : (hasRows ? 'STORED STAFFME' : (state.helperStatus ? 'HELPER READY' : 'WAITING'));
-      document.getElementById('syncTitle').textContent = hasRows
+      document.getElementById('syncTitle').textContent = identityMismatch
+        ? 'SM identity mismatch — rows blocked'
+        : hasRows
         ? 'StaffMe hourly data is loaded'
         : (tableFound && parsedRows === 0
           ? 'StaffMe table detected, but no rows were parsed'
@@ -2850,7 +2882,7 @@
         : state.remoteStatus === 'local-only'
           ? ' Cloud copy is unavailable; this browser is using its saved copy.'
           : '';
-      document.getElementById('syncDetail').textContent = baseSyncDetail + remoteDetail;
+      document.getElementById('syncDetail').textContent = [identityDetail, baseSyncDetail, remoteDetail].filter(Boolean).join(' ');
 
       const cards = [
         { name: 'Work Hours', value: summary.work, target: state.settings.targets.work, className: '', note: 'StaffMe + manual entries' },
@@ -3105,7 +3137,21 @@
     }
 
     async function handleHourlyDataMessage(data) {
+      // Do not accept a response from an old/current helper request that did
+      // not carry this dashboard's linked identity. The dashboard will issue
+      // a guarded request when the extension refresh signal arrives.
+      if (state.smIdentity && (!data || data.expectedSmIdentity !== state.smIdentity)) {
+        return;
+      }
       state.helperStatus = data && data.helperStatus || state.helperStatus;
+      if (data && (data.identityMismatch === true || data.identityAmbiguous === true)) {
+        const observed = Array.isArray(data.observedIdentities) && data.observedIdentities.length
+          ? data.observedIdentities
+          : [data.observedSmIdentity || 'More than one SM worker identity'];
+        openSmIdentityMismatch(observed);
+        render();
+        return;
+      }
       const imported = normalizeRows(data && data.rows || []);
       if (!imported.length) {
         render();
@@ -3801,8 +3847,12 @@
       render();
     });
 
-    function requestStaffMeRows() {
-      window.postMessage({ type: 'STAFFME_REQUEST_DATA' }, '*');
+    function requestStaffMeRows(replaceExisting) {
+      window.postMessage({
+        type: 'STAFFME_REQUEST_DATA',
+        expectedSmIdentity: state.smIdentity || '',
+        replaceExisting: replaceExisting === true
+      }, '*');
     }
 
     function updateAutoRefreshControls() {
@@ -3863,9 +3913,9 @@
       updateAutoRefreshControls();
     }
 
-    function refreshStaffMeData(showMessage) {
+    function refreshStaffMeData(showMessage, replaceExisting) {
       if (!state.email) return;
-      requestStaffMeRows();
+      requestStaffMeRows(replaceExisting);
       // A data refresh must also force a new exchange-rate request.
       refreshExchangeRate(true);
       autoRefreshDeadline = Date.now() + AUTO_REFRESH_INTERVAL_MS;
@@ -3904,6 +3954,11 @@
     window.__smtrackerDashboardClearHandlerInstalled = true;
     window.addEventListener('message', function(event) {
       if (!state.email || !event.data) return;
+
+      if (event.data.type === 'SMTRACKER_EXTENSION_REFRESH') {
+        refreshStaffMeData(false, event.data.replaceExisting === true);
+        return;
+      }
 
       if (event.data.type === 'STAFFME_HELPER_STATUS') {
         state.helperStatus = event.data;

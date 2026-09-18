@@ -93,6 +93,8 @@
     </p>
     <p>
       The extension stores SM normalized hourly rows, a sync timestamp, and local connection/setup status.
+      SM rows are kept in separate local buckets by detected worker identity, and rows are not sent to a
+      dashboard when the detected identity does not match its linked identity.
       It does not read passwords, cookies, authentication tokens, general browsing history, private
       messages, or unrelated page content. CB tracking does not read or store the queue's usernames,
       private messages, or image content.

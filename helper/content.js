@@ -2,6 +2,7 @@
   const STORAGE_KEY = "staffmeHourlyRows";
   const LAST_SYNC_KEY = "staffmeHourlyLastSync";
   const STATUS_KEY = "staffmeHourlyStatus";
+  const PROFILES_KEY = "staffmeHourlyProfilesV1";
   const CONSENT_KEY = "staffmeHelperConsentV1";
   const TEST_ROWS_KEY = "staffmeHourlyTestRows";
   const INCLUDE_TEST_ROWS_KEY = "staffmeHourlyIncludeTestRows";
@@ -130,6 +131,106 @@
     const text = clean(value).replace(",", ".").replace(/[^0-9.-]/g, "");
     const number = Number(text);
     return Number.isFinite(number) ? number : 0;
+  }
+
+  function identityKey(value) {
+    return clean(value)
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  function identityTokens(value) {
+    return identityKey(value).split(" ").filter((token) => token.length > 1);
+  }
+
+  function identitiesMatch(sourceName, expectedName) {
+    const sourceTokens = new Set(identityTokens(sourceName));
+    const expectedTokens = identityTokens(expectedName);
+    return expectedTokens.length > 0 && expectedTokens.every((token) => sourceTokens.has(token));
+  }
+
+  function identityNames(rows) {
+    const names = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const name = clean(row && row.agent);
+      const key = identityKey(name);
+      if (key && !names.has(key)) names.set(key, name);
+    });
+    return Array.from(names.values());
+  }
+
+  function normalizeProfileMap(stored) {
+    const profiles = {};
+    const addRows = (rows, lastSync) => {
+      (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const name = clean(row && row.agent);
+        const key = identityKey(name);
+        if (!key || !row || !row.date || !row.time) return;
+        if (!profiles[key]) profiles[key] = { identity: name, rows: [], lastSync: null };
+        profiles[key].rows.push(row);
+        if (lastSync && (!profiles[key].lastSync || new Date(lastSync) > new Date(profiles[key].lastSync))) {
+          profiles[key].lastSync = lastSync;
+        }
+      });
+    };
+
+    const saved = stored && stored[PROFILES_KEY];
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+      Object.keys(saved).forEach((key) => {
+        const profile = saved[key];
+        if (!profile || typeof profile !== "object") return;
+        const identity = clean(profile.identity || key);
+        const normalizedKey = identityKey(identity);
+        if (!normalizedKey) return;
+        profiles[normalizedKey] = {
+          identity,
+          rows: dedupe(Array.isArray(profile.rows) ? profile.rows : []),
+          lastSync: profile.lastSync || null
+        };
+      });
+    }
+
+    // Migrate the old single shared bucket by splitting it according to the
+    // Agent column. This keeps old data usable without mixing identities.
+    if (!Object.keys(profiles).length && stored && Array.isArray(stored[STORAGE_KEY])) {
+      addRows(stored[STORAGE_KEY], stored[LAST_SYNC_KEY] || null);
+      Object.keys(profiles).forEach((key) => {
+        profiles[key].rows = dedupe(profiles[key].rows);
+      });
+    }
+
+    return profiles;
+  }
+
+  function profileEntries(profiles) {
+    return Object.keys(profiles || {})
+      .map((key) => profiles[key])
+      .filter((profile) => profile && Array.isArray(profile.rows) && profile.rows.length && profile.identity);
+  }
+
+  function profileRowCount(profiles) {
+    return profileEntries(profiles).reduce((total, profile) => total + profile.rows.length, 0);
+  }
+
+  function selectProfile(profiles, expectedIdentity, activeIdentityKey) {
+    const entries = profileEntries(profiles);
+    if (!expectedIdentity) {
+      if (entries.length === 1) return { profile: entries[0], state: "identified" };
+      return { profile: null, state: entries.length > 1 ? "ambiguous" : "none" };
+    }
+
+    const matches = entries.filter((profile) => identitiesMatch(profile.identity, expectedIdentity));
+    if (matches.length === 1) return { profile: matches[0], state: "matched" };
+    if (matches.length > 1) {
+      const active = matches.find((profile) => identityKey(profile.identity) === activeIdentityKey);
+      return active
+        ? { profile: active, state: "matched" }
+        : { profile: null, state: "ambiguous" };
+    }
+    return { profile: null, state: "mismatch" };
   }
 
   function hasHourlyHeaders(element) {
@@ -383,7 +484,7 @@
   function notifyTrackerDataRefresh(replaceExisting) {
     if (!isTrackerPage || extensionInvalidated) return;
     window.postMessage({
-      type: "STAFFME_REQUEST_DATA",
+      type: "SMTRACKER_EXTENSION_REFRESH",
       replaceExisting: replaceExisting === true
     }, "*");
   }
@@ -395,6 +496,7 @@
 
   async function getAdminSnapshot() {
     const stored = await safeStorageGet([
+      PROFILES_KEY,
       STORAGE_KEY,
       LAST_SYNC_KEY,
       STATUS_KEY,
@@ -404,7 +506,8 @@
     ]);
     if (!stored) return null;
 
-    const realRows = Array.isArray(stored[STORAGE_KEY]) ? stored[STORAGE_KEY] : [];
+    const profiles = normalizeProfileMap(stored);
+    const realRows = profileEntries(profiles).reduce((rows, profile) => rows.concat(profile.rows), []);
     const testRows = Array.isArray(stored[TEST_ROWS_KEY]) ? stored[TEST_ROWS_KEY] : [];
     const includeTestRows = stored[INCLUDE_TEST_ROWS_KEY] === true;
     const status = stored[STATUS_KEY] && typeof stored[STATUS_KEY] === "object"
@@ -416,6 +519,9 @@
       realRows: realRows.length,
       testRows: testRows.length,
       dashboardRows: realRows.length + (includeTestRows ? testRows.length : 0),
+      identities: profileEntries(profiles).map((profile) => profile.identity),
+      activeIdentity: clean(status.identity),
+      identityState: clean(status.identityState) || "none",
       includeTestRows,
       tableFound: Boolean(status.tableFound),
       parsedRows: Number(status.parsedRows) || 0,
@@ -455,6 +561,7 @@
 
     if (action === "clearRows") {
       const ok = await safeStorageRemove([
+        PROFILES_KEY,
         STORAGE_KEY,
         LAST_SYNC_KEY,
         STATUS_KEY,
@@ -535,6 +642,9 @@
       shadow.querySelector("[data-value='parsed']").textContent = String(snapshot.parsedRows);
       shadow.querySelector("[data-value='source']").textContent = snapshot.source;
       shadow.querySelector("[data-value='scanned']").textContent = adminStatusTime(snapshot.scannedAt);
+      shadow.querySelector("[data-value='identity']").textContent = snapshot.activeIdentity || "—";
+      shadow.querySelector("[data-value='identityState']").textContent = snapshot.identityState || "—";
+      shadow.querySelector("[data-value='identities']").textContent = snapshot.identities.length ? snapshot.identities.join(", ") : "—";
       shadow.querySelector("[data-value='frame']").textContent = snapshot.frame;
       shadow.querySelector("[data-action='include-test']").checked = snapshot.includeTestRows;
 
@@ -622,6 +732,9 @@
             <dt>Parsed rows</dt><dd data-value="parsed">—</dd>
             <dt>Source</dt><dd data-value="source">—</dd>
             <dt>Last scan</dt><dd data-value="scanned">—</dd>
+            <dt>Detected worker</dt><dd data-value="identity">—</dd>
+            <dt>Identity state</dt><dd data-value="identityState">—</dd>
+            <dt>Stored identities</dt><dd data-value="identities">—</dd>
             <dt>Frame</dt><dd data-value="frame">—</dd>
           </dl>
           <div class="section-title">Test row</div>
@@ -743,26 +856,68 @@
       }));
 
     const current = await safeStorageGet([
+      PROFILES_KEY,
       STORAGE_KEY,
       LAST_SYNC_KEY
     ]);
     if (!current) return;
-    const merged = dedupe((current[STORAGE_KEY] || []).concat(normalizedRows));
     const now = new Date().toISOString();
+    const profiles = normalizeProfileMap(current);
+    const names = identityNames(normalizedRows);
+    const missingIdentity = normalizedRows.some((row) => !identityKey(row.agent));
+    const identityState = missingIdentity ? "missing" : names.length === 0 ? "none" : names.length === 1 ? "identified" : "ambiguous";
+
+    if (!normalizedRows.length || identityState !== "identified") {
+      const status = {
+        installed: true,
+        tableFound: Boolean(tableFound),
+        parsedRows: normalizedRows.length,
+        storedRows: profileRowCount(profiles),
+        source: normalizedRows.length ? "staffme-network" : "staffme-dom",
+        scannedAt: now,
+        identity: names.length === 1 ? names[0] : "",
+        identityKey: names.length === 1 ? identityKey(names[0]) : "",
+        identityState,
+        observedIdentities: names,
+        blocked: Boolean(normalizedRows.length),
+        blockedReason: missingIdentity ? "missing-agent" : names.length > 1 ? "multiple-agents" : "no-rows"
+      };
+      await safeStorageSet({ [STATUS_KEY]: status });
+      postStatus(status);
+      return;
+    }
+
+    const identity = names[0];
+    const key = identityKey(identity);
+    const existing = profiles[key] || { identity, rows: [], lastSync: null };
+    const merged = dedupe(existing.rows.concat(normalizedRows));
+    profiles[key] = {
+      identity: existing.identity || identity,
+      rows: merged,
+      lastSync: now
+    };
     const status = {
       installed: true,
       tableFound: Boolean(tableFound),
       parsedRows: normalizedRows.length,
-      storedRows: merged.length,
+      storedRows: profileRowCount(profiles),
       source: normalizedRows.length ? "staffme-network" : "staffme-dom",
-      scannedAt: now
+      scannedAt: now,
+      identity: profiles[key].identity,
+      identityKey: key,
+      identityState: "identified",
+      observedIdentities: profileEntries(profiles).map((profile) => profile.identity),
+      blocked: false,
+      blockedReason: ""
     };
 
     if (!(await safeStorageSet({
-      [STORAGE_KEY]: merged,
+      [PROFILES_KEY]: profiles,
       [LAST_SYNC_KEY]: normalizedRows.length ? now : (current[LAST_SYNC_KEY] || null),
       [STATUS_KEY]: status
     }))) return;
+
+    await safeStorageRemove([STORAGE_KEY]);
 
     postStatus(status);
   }
@@ -792,7 +947,7 @@
         return;
       }
       if (event.data.type === "SMTRACKER_CLEAR_LOCAL_SM_ROWS") {
-        safeStorageRemove([STORAGE_KEY, LAST_SYNC_KEY, STATUS_KEY])
+        safeStorageRemove([PROFILES_KEY, STORAGE_KEY, LAST_SYNC_KEY, STATUS_KEY])
           .then((ok) => {
             window.postMessage({
               type: "SMTRACKER_CLEAR_LOCAL_SM_ROWS_RESULT",
@@ -882,6 +1037,7 @@
       (async () => {
         try {
           const stored = await safeStorageGet([
+            PROFILES_KEY,
             STORAGE_KEY,
             LAST_SYNC_KEY,
             STATUS_KEY,
@@ -891,39 +1047,70 @@
           ]);
           if (!stored || extensionInvalidated) return;
           const hasConsent = stored[CONSENT_KEY] === true;
-          const realRows = hasConsent && Array.isArray(stored[STORAGE_KEY])
-            ? stored[STORAGE_KEY]
-            : [];
-          const includeTestRows = hasConsent && stored[INCLUDE_TEST_ROWS_KEY] === true;
-          const testRows = includeTestRows && Array.isArray(stored[TEST_ROWS_KEY])
-            ? stored[TEST_ROWS_KEY]
-            : [];
-          const rows = realRows.concat(testRows);
+          const profiles = hasConsent ? normalizeProfileMap(stored) : {};
           const storedStatus = stored[STATUS_KEY] && typeof stored[STATUS_KEY] === "object"
             ? stored[STATUS_KEY]
             : {};
+          const expectedIdentity = clean(event.data.expectedSmIdentity);
+          const availableProfiles = profileEntries(profiles);
+          const selection = selectProfile(profiles, expectedIdentity, clean(storedStatus.identityKey));
+          const activeIdentity = clean(storedStatus.identity);
+          const activeIdentityMismatch = Boolean(expectedIdentity && activeIdentity) && !identitiesMatch(activeIdentity, expectedIdentity);
+          const identityMismatch = Boolean(expectedIdentity) && (selection.state !== "matched" || activeIdentityMismatch);
+          const identityAmbiguous = selection.state === "ambiguous";
+          const realRows = hasConsent && !identityMismatch && !identityAmbiguous && selection.profile
+            ? selection.profile.rows
+            : [];
+          const includeTestRows = hasConsent && stored[INCLUDE_TEST_ROWS_KEY] === true;
+          const testRows = includeTestRows && !identityMismatch && !identityAmbiguous && Array.isArray(stored[TEST_ROWS_KEY])
+            ? stored[TEST_ROWS_KEY]
+            : [];
+          const rows = realRows.concat(testRows);
+          const observedForDashboard = identityMismatch && activeIdentity
+            ? [activeIdentity]
+            : availableProfiles.map((profile) => profile.identity);
+          const responseStatus = hasConsent
+            ? {
+                ...storedStatus,
+                installed: true,
+                storedRows: profileRowCount(profiles),
+                realRows: realRows.length,
+                testRows: testRows.length,
+                testRowsIncluded: testRows.length > 0,
+                dashboardIdentity: expectedIdentity,
+                identityMatched: !identityMismatch && !identityAmbiguous && Boolean(selection.profile || !expectedIdentity),
+                identityMismatch,
+                identityAmbiguous,
+                availableIdentities: observedForDashboard
+              }
+            : {
+                installed: true,
+                tableFound: false,
+                parsedRows: 0,
+                storedRows: 0,
+                awaitingConsent: true,
+                dashboardIdentity: expectedIdentity,
+                identityMatched: false,
+                identityMismatch: false,
+                identityAmbiguous: false,
+                availableIdentities: []
+              };
+
+          await safeStorageSet({ [STATUS_KEY]: responseStatus });
 
           window.postMessage({
             type: "STAFFME_HOURLY_DATA",
             rows,
             replaceExisting: event.data.replaceExisting === true,
-            lastSync: hasConsent ? (stored[LAST_SYNC_KEY] || null) : null,
-            helperStatus: hasConsent
-              ? ({
-                  ...storedStatus,
-                  installed: true,
-                  storedRows: rows.length,
-                  realRows: realRows.length,
-                  testRows: testRows.length,
-                  testRowsIncluded: includeTestRows
-                })
-              : {
-                  installed: true,
-                  tableFound: false,
-                  parsedRows: 0,
-                  storedRows: 0,
-                  awaitingConsent: true
-                }
+            lastSync: hasConsent
+              ? ((selection.profile && selection.profile.lastSync) || stored[LAST_SYNC_KEY] || null)
+              : null,
+            identityMismatch,
+            identityAmbiguous,
+            expectedSmIdentity: expectedIdentity,
+            observedSmIdentity: storedStatus.identity || "",
+            observedIdentities: responseStatus.availableIdentities,
+            helperStatus: responseStatus
           }, "*");
         } catch (error) {
           handleExtensionError(error);
@@ -932,7 +1119,7 @@
     });
 
     window.setTimeout(() => {
-      window.postMessage({ type: "STAFFME_REQUEST_DATA" }, "*");
+      window.postMessage({ type: "SMTRACKER_EXTENSION_REFRESH" }, "*");
     }, 900);
   }
 })();

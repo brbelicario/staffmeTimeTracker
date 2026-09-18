@@ -1,6 +1,7 @@
 const CB_STORAGE_KEY = "smtrackerCbState";
 const SM_STATUS_KEY = "staffmeConnectionStatusV1";
 const SM_HOURLY_STATUS_KEY = "staffmeHourlyStatus";
+const SM_PROFILES_KEY = "staffmeHourlyProfilesV1";
 const SM_ROWS_KEY = "staffmeHourlyRows";
 const SM_LAST_SYNC_KEY = "staffmeHourlyLastSync";
 const SM_TEST_ROWS_KEY = "staffmeHourlyTestRows";
@@ -54,11 +55,23 @@ function setStatus(element, text, color) {
   element.style.color = color;
 }
 
+function profileRows(stored) {
+  const profiles = stored[SM_PROFILES_KEY] && typeof stored[SM_PROFILES_KEY] === "object"
+    ? stored[SM_PROFILES_KEY]
+    : {};
+  const rows = Object.values(profiles).reduce((allRows, profile) => {
+    return allRows.concat(profile && Array.isArray(profile.rows) ? profile.rows : []);
+  }, []);
+  return rows.length || Object.keys(profiles).length
+    ? rows
+    : (Array.isArray(stored[SM_ROWS_KEY]) ? stored[SM_ROWS_KEY] : []);
+}
+
 function renderSm(stored) {
   const statusElement = document.getElementById("sm-status");
   const summaryElement = document.getElementById("sm-summary");
   const detailElement = document.getElementById("sm-detail");
-  const rows = Array.isArray(stored[SM_ROWS_KEY]) ? stored[SM_ROWS_KEY] : [];
+  const rows = profileRows(stored);
   const status = stored[SM_STATUS_KEY] && typeof stored[SM_STATUS_KEY] === "object"
     ? stored[SM_STATUS_KEY]
     : {};
@@ -74,14 +87,35 @@ function renderSm(stored) {
   const scanTime = Date.parse(hourlyStatus.scannedAt || "");
   const recentTableScan = Number.isFinite(scanTime) && Date.now() - scanTime <= 20000;
   const ready = Boolean(smPage && (smPage.ready || (hourlyStatus.tableFound && recentTableScan)));
+  const detectedIdentity = String(hourlyStatus.identity || "").trim();
+  const identities = Array.isArray(hourlyStatus.availableIdentities) && hourlyStatus.availableIdentities.length
+    ? hourlyStatus.availableIdentities
+    : Object.values(stored[SM_PROFILES_KEY] || {})
+        .map((profile) => String(profile && profile.identity || "").trim())
+        .filter(Boolean);
+  const identityBlocked = hourlyStatus.blocked === true || hourlyStatus.identityMismatch === true || hourlyStatus.identityState === "ambiguous" || hourlyStatus.identityState === "missing";
 
-  if (ready) {
+  if (identityBlocked) {
+    setStatus(statusElement, "Blocked", "#ff887f");
+    summaryElement.textContent = detectedIdentity
+      ? `Detected: ${detectedIdentity}`
+      : "SM worker identity could not be confirmed";
+    detailElement.textContent = hourlyStatus.identityMismatch
+      ? `Dashboard is linked to ${hourlyStatus.dashboardIdentity || "another SM worker"}; no rows were sent.`
+      : hourlyStatus.identityState === "ambiguous"
+      ? "More than one worker identity was found; no new rows were saved."
+      : hourlyStatus.identityState === "missing"
+        ? "The hourly rows have no Agent name; no new rows were saved."
+        : "No new SM rows were saved.";
+  } else if (ready) {
     setStatus(statusElement, "Ready", "#56e39f");
-    summaryElement.textContent = `${rows.length} hourly row${rows.length === 1 ? "" : "s"} saved`;
-    detailElement.textContent = formatAge(stored[SM_LAST_SYNC_KEY]);
+    summaryElement.textContent = detectedIdentity
+      ? `Detected: ${detectedIdentity}`
+      : `${rows.length} hourly row${rows.length === 1 ? "" : "s"} saved`;
+    detailElement.textContent = `${rows.length} saved row${rows.length === 1 ? "" : "s"} · ${identities.length} worker${identities.length === 1 ? "" : "s"} stored · ${formatAge(stored[SM_LAST_SYNC_KEY])}`;
   } else if (smPage) {
     setStatus(statusElement, "Open", "#f59e0b");
-    summaryElement.textContent = "SM page is open";
+    summaryElement.textContent = detectedIdentity ? `Detected: ${detectedIdentity}` : "SM page is open";
     detailElement.textContent = rows.length
       ? `${rows.length} saved row${rows.length === 1 ? "" : "s"}; waiting for the table`
       : "Waiting for the hourly table to load";
@@ -89,7 +123,7 @@ function renderSm(stored) {
     setStatus(statusElement, "Waiting", "#8b949e");
     summaryElement.textContent = "Open the SM tracker page";
     detailElement.textContent = rows.length
-      ? `${rows.length} saved row${rows.length === 1 ? "" : "s"}; ${formatAge(stored[SM_LAST_SYNC_KEY])}`
+      ? `${rows.length} saved row${rows.length === 1 ? "" : "s"} across ${identities.length} worker${identities.length === 1 ? "" : "s"}; ${formatAge(stored[SM_LAST_SYNC_KEY])}`
       : "No SM page is currently detected";
   }
 }
@@ -124,7 +158,7 @@ let currentState = null;
 async function refresh() {
   const [cbState, stored] = await Promise.all([
     send({ type: "GET_STATE" }),
-    readStorage([SM_STATUS_KEY, SM_HOURLY_STATUS_KEY, SM_ROWS_KEY, SM_LAST_SYNC_KEY])
+    readStorage([SM_STATUS_KEY, SM_HOURLY_STATUS_KEY, SM_PROFILES_KEY, SM_ROWS_KEY, SM_LAST_SYNC_KEY])
   ]);
   currentState = cbState;
   renderSm(stored);
@@ -149,6 +183,7 @@ document.getElementById("clear-sm-button").addEventListener("click", async () =>
   button.disabled = true;
   try {
     await removeStorage([
+      SM_PROFILES_KEY,
       SM_ROWS_KEY,
       SM_LAST_SYNC_KEY,
       SM_HOURLY_STATUS_KEY,
@@ -171,7 +206,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     currentState = changes[CB_STORAGE_KEY].newValue;
     renderCb(currentState);
   }
-  if (changes[SM_STATUS_KEY] || changes[SM_HOURLY_STATUS_KEY] || changes[SM_ROWS_KEY] || changes[SM_LAST_SYNC_KEY]) {
+  if (changes[SM_STATUS_KEY] || changes[SM_HOURLY_STATUS_KEY] || changes[SM_PROFILES_KEY] || changes[SM_ROWS_KEY] || changes[SM_LAST_SYNC_KEY]) {
     refresh();
   }
 });

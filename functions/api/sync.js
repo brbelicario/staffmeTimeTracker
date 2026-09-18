@@ -23,6 +23,47 @@ async function hash(value) {
   return Array.from(new Uint8Array(digest)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
 }
 
+function cleanIdentity(value) {
+  return String(value === undefined || value === null ? '' : value)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+}
+
+function identityKey(value) {
+  return cleanIdentity(value)
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function identityTokens(value) {
+  return identityKey(value).split(' ').filter(function(token) { return token.length > 1; });
+}
+
+function identitiesMatch(sourceName, expectedName) {
+  const sourceTokens = new Set(identityTokens(sourceName));
+  const expectedTokens = identityTokens(expectedName);
+  return expectedTokens.length > 0 && expectedTokens.every(function(token) { return sourceTokens.has(token); });
+}
+
+function isSyntheticRow(row) {
+  return Boolean(row && row.test === true) || identityKey(row && row.agent) === 'smtracker test';
+}
+
+function observedIdentities(rows) {
+  const names = new Map();
+  (Array.isArray(rows) ? rows : []).forEach(function(row) {
+    if (isSyntheticRow(row)) return;
+    const name = cleanIdentity(row && row.agent);
+    const key = identityKey(name);
+    if (key && !names.has(key)) names.set(key, name);
+  });
+  return Array.from(names.values());
+}
+
 async function ensureTables(db) {
   await db.batch([
     db.prepare('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT, picture TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)'),
@@ -75,7 +116,26 @@ export async function onRequest(context) {
   const manualEntries = body && Array.isArray(body.manualEntries) ? body.manualEntries : [];
   const reportedWeeks = body && Array.isArray(body.reportedWeeks) ? body.reportedWeeks : [];
   const contracts = body && Array.isArray(body.contracts) ? body.contracts : [];
-  const smIdentity = body && typeof body.smIdentity === 'string' ? body.smIdentity.trim().replace(/\s+/g, ' ').slice(0, 120) : '';
+  const smIdentity = body && typeof body.smIdentity === 'string' ? cleanIdentity(body.smIdentity) : '';
+  const realRows = rows.filter(function(row) { return !isSyntheticRow(row); });
+  const rowIdentities = observedIdentities(realRows);
+  if (realRows.length && !smIdentity) {
+    return json({ ok: false, code: 'SM_IDENTITY_REQUIRED', error: 'SM worker identity is required before hourly rows can be saved.' }, 409);
+  }
+  if (realRows.length && smIdentity) {
+    const invalid = realRows.some(function(row) {
+      return !cleanIdentity(row && row.agent) || !identitiesMatch(row.agent, smIdentity);
+    });
+    if (invalid) {
+      return json({
+        ok: false,
+        code: 'SM_IDENTITY_MISMATCH',
+        error: 'The SM hourly rows do not match the linked SM worker identity.',
+        expectedIdentity: smIdentity,
+        observedIdentities: rowIdentities
+      }, 409);
+    }
+  }
   const rowsJson = JSON.stringify(rows);
   const manualEntriesJson = JSON.stringify(manualEntries);
   const reportedWeeksJson = JSON.stringify(reportedWeeks);

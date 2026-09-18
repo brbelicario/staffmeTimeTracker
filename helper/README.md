@@ -8,15 +8,16 @@ Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance
 
 - Reads the visible SM “Hourly AHT (Last 5 Days)” table after you approve the on-page data-access notice.
 - Supports the framed preview page, including random Google-hosted frame subdomains, and standard HTML table/row layouts.
-- Stores normalized hourly rows in the browser's local extension storage.
-- Makes those rows available to the SMTracker dashboard when the dashboard requests a refresh.
-- The dashboard asks new accounts to set contract dates and can link the visible SM worker name, so rows from multiple SM accounts in one browser are kept with the correct tracker account.
-- Shows local connection and setup status.
+- Stores normalized hourly rows in separate local buckets for each detected SM worker identity.
+- Makes only the identity-matching bucket available when the SMTracker dashboard requests a refresh.
+- Shows the detected worker identity and blocks rows when a table has no Agent name or contains multiple identities.
+- The dashboard asks new accounts to set contract dates and can link the visible SM worker name, so rows from multiple SM accounts in one browser cannot be mixed into the wrong tracker account.
+- Shows local connection, setup, and identity status.
 
 ### Local testing tools
 
 - On an SM page or the SMTracker dashboard, open DevTools Console and run `SMTrackerAdmin.open()` to open the local admin menu.
-- The menu shows the scan source, frame, parsed rows, stored rows, and consent state.
+- The menu shows the scan source, frame, parsed rows, stored rows, detected worker identity, stored identities, and consent state.
 - It can force a scan, clear the saved SM hourly data, and create/remove separate synthetic test rows.
 - Clearing SM hourly data also clears the dashboard account copy; it does not alter the original SM table.
 - Synthetic test rows are included in the dashboard only when the menu's test-row option is enabled. They never change the original SM data or CB records.
