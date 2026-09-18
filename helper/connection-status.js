@@ -16,9 +16,18 @@
   const STAFFME_BETA_PATH = "/macros/s/AKfycbz-ZTA3IBu5Kmz7Fh7UIIVf9YB6W8qCjJllACUsl_mIh6WIsD8wgkATuP-c6Ust0-dQ/exec";
 
   const hostname = String(location.hostname || "").toLowerCase();
+  const isScriptGoogleusercontentHost = (host) => {
+    const normalized = String(host || "").toLowerCase();
+    return normalized === "script.googleusercontent.com" ||
+      normalized.endsWith(".script.googleusercontent.com");
+  };
+  const isStaffMeHost = (host) => {
+    const normalized = String(host || "").toLowerCase();
+    return STAFFME_HOSTS.has(normalized) || isScriptGoogleusercontentHost(normalized);
+  };
   const context = hostname === TRACKER_HOST
     ? "dashboard"
-    : STAFFME_HOSTS.has(hostname)
+    : isStaffMeHost(hostname)
       ? "staffme"
       : null;
 
@@ -79,7 +88,7 @@
 
     // Apps Script can render or redirect through script.googleusercontent.com.
     // The original beta URL in the referrer still identifies the requested app.
-    if (hostname === "script.googleusercontent.com") {
+    if (isScriptGoogleusercontentHost(hostname)) {
       const referrer = clean(document.referrer);
       return referrer.includes(STAFFME_BETA_HOST + STAFFME_BETA_PATH) ||
         location.href.includes(STAFFME_BETA_PATH);

@@ -21,8 +21,9 @@ The dashboard includes:
 - Weekly metric cards and daily breakdown
 - Same-browser StaffMe hourly data bridge
 - Local deduplication and browser storage
+- First-use setup for contract dates, schedule, targets, caps, pay, and optional SM worker identity linking
 
-The dashboard starts empty. It does not create demo rows. Data appears only after the helper reads the visible StaffMe “Hourly AHT (Last 5 Days)” table and sends those rows to the dashboard. Each account has its own saved profile and can be used from another device.
+The dashboard starts empty. It does not create demo rows. Data appears only after the helper reads the visible StaffMe “Hourly AHT (Last 5 Days)” table and sends those rows to the dashboard. New accounts are prompted to complete their contract and tracker settings. Each account has its own saved profile and can be used from another device; an optional linked SM worker identity prevents rows from different SM accounts in the same browser from being mixed.
 
 The helper:
 

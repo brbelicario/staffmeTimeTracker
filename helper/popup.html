@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SMTracker</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand"><span class="brand-dot"></span><span>SMTracker</span></div>
+        <span class="version">SM + CB</span>
+      </header>
+
+      <section class="status-card">
+        <div class="status-line">
+          <span>SM status</span>
+          <span id="sm-status">Checking</span>
+        </div>
+        <div class="task" id="sm-summary">Waiting for the SM page</div>
+        <div class="summary" id="sm-detail">Hourly rows will appear here after the page is ready.</div>
+      </section>
+
+      <section class="status-card">
+        <div class="status-line">
+          <span>CB status</span>
+          <span id="cb-status">Ready</span>
+        </div>
+        <div class="task" id="cb-task">No task ID detected</div>
+        <div class="summary" id="cb-summary">Open the CB queue to begin.</div>
+      </section>
+
+      <div class="buttons">
+        <button class="primary" id="tracking-button">Start CB tracking</button>
+        <button id="open-queue">Open CB queue</button>
+        <button class="muted" id="clear-sm-button">Clear SM hourly rows</button>
+      </div>
+
+      <section class="instructions">
+        <h2>How it works</h2>
+        <p>SM reads the visible SM hourly table after you approve the on-page notice and makes the rows available to the tracker.</p>
+        <p>CB reads the visible task ID and calculates Task AHT and hourly averages. Closing the queue pauses the timer; the same task resumes when it returns.</p>
+        <p class="small"><a href="https://staffmetimetracker.pages.dev/privacy-policy.html" target="_blank" rel="noopener">View privacy policy</a></p>
+      </section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

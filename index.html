@@ -216,6 +216,9 @@
     .contract-notice-copy strong { color: #553d1e; font-size: .87rem; }
     .contract-notice-copy span { font-size: .77rem; line-height: 1.4; }
     .contract-notice .btn { flex: 0 0 auto; color: #fff; background: #9b6a2d; }
+    .contract-notice.identity-warning { border-color: #efb0b0; background: #fff4f4; color: #7f3838; }
+    .contract-notice.identity-warning .contract-notice-copy strong { color: #7f2f2f; }
+    .contract-notice.identity-warning .btn { background: #a53c3c; }
     .view-tabs { display: flex; gap: 6px; margin: 0 0 16px; padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.76); width: fit-content; }
     .view-tab { border: 0; background: transparent; color: var(--muted); border-radius: 10px; padding: 9px 13px; font-size: .78rem; font-weight: 850; }
     .view-tab:hover { color: var(--ink); background: #f3f6f9; }
@@ -883,9 +886,12 @@
       lastSync: null,
       autoRefresh: true,
       helperStatus: null,
+      hourlyDataClearPending: false,
       remoteStatus: 'unknown',
       remoteReady: false,
       user: null,
+      smIdentity: '',
+      smIdentityWarning: null,
       exchangeRateStatus: 'idle',
       exchangeRateError: '',
       contractPromptDismissedKey: ''
@@ -902,6 +908,10 @@
     let autoRefreshDeadline = 0;
     let contractEndTimer = null;
     let contractPromptShownKey = '';
+    let initialSetupPromptShownKey = '';
+    let pendingHourlyImport = null;
+    let identityWarningShownKey = '';
+    let identityPromptDismissedKey = '';
     let dashboardView = 'active';
     let hourlySelectedWeek = 1;
     let hourlyPage = 1;
@@ -957,6 +967,8 @@
         contracts: state.contracts,
         source: state.source,
         lastSync: state.lastSync,
+        smIdentity: state.smIdentity || '',
+        hourlyDataClearPending: state.hourlyDataClearPending === true,
         autoRefresh: state.autoRefresh !== false,
         contractPromptDismissedKey: state.contractPromptDismissedKey || ''
       }));
@@ -973,6 +985,61 @@
       return merged;
     }
 
+    function normalizeSmIdentity(value) {
+      return String(value === undefined || value === null ? '' : value)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+    }
+
+    function smIdentityKey(value) {
+      return normalizeSmIdentity(value)
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    }
+
+    function isSyntheticSmRow(row) {
+      return smIdentityKey(row && row.agent) === 'smtracker test';
+    }
+
+    function sourceSmIdentityNames(rows) {
+      const names = new Map();
+      (Array.isArray(rows) ? rows : []).forEach(function(row) {
+        if (!row || isSyntheticSmRow(row)) return;
+        const name = normalizeSmIdentity(row.agent);
+        const key = smIdentityKey(name);
+        if (!key || names.has(key)) return;
+        names.set(key, name);
+      });
+      return Array.from(names.values());
+    }
+
+    function hasUnidentifiedSmRows(rows) {
+      return (Array.isArray(rows) ? rows : []).some(function(row) {
+        return row && !isSyntheticSmRow(row) && !smIdentityKey(row.agent);
+      });
+    }
+
+    function rowsForSmIdentity(rows, identity) {
+      const expectedKey = smIdentityKey(identity);
+      return (Array.isArray(rows) ? rows : []).filter(function(row) {
+        return isSyntheticSmRow(row) || smIdentityKey(row && row.agent) === expectedKey;
+      });
+    }
+
+    function hasValidContract() {
+      const range = contractRange();
+      return Boolean(range && !range.invalid);
+    }
+
+    function resetIdentityWarning() {
+      identityWarningShownKey = '';
+      identityPromptDismissedKey = '';
+    }
+
     async function pullRemoteProfile() {
       if (!state.email) return;
       state.remoteReady = false;
@@ -982,27 +1049,45 @@
         const response = await fetch('/api/sync', { cache: 'no-store' });
         if (!response.ok) throw new Error('Cloud sync unavailable');
         const remote = await response.json();
+        const preserveClearedHourlyData = state.hourlyDataClearPending === true;
+        let remoteIdentityMismatch = false;
         if (remote.found) {
-          state.rows = dedupeRows(state.rows.concat(normalizeRows(remote.rows || [])));
+          if (Object.prototype.hasOwnProperty.call(remote, 'smIdentity')) {
+            state.smIdentity = normalizeSmIdentity(remote.smIdentity);
+          }
+          if (!preserveClearedHourlyData) {
+            const remoteRows = normalizeRows(remote.rows || []);
+            const remoteNames = sourceSmIdentityNames(remoteRows);
+            const remoteMatchingRows = state.smIdentity && remoteNames.length
+              ? rowsForSmIdentity(remoteRows, state.smIdentity)
+              : remoteRows;
+            if (state.smIdentity && remoteNames.length && !remoteMatchingRows.some(function(row) { return !isSyntheticSmRow(row); })) {
+              state.smIdentityWarning = { expected: state.smIdentity, observed: remoteNames.join(', ') };
+              remoteIdentityMismatch = true;
+            } else {
+              state.rows = dedupeRows(state.rows.concat(remoteMatchingRows));
+            }
+          }
           state.manualEntries = mergeManualEntries(state.manualEntries, normalizeManualEntries(remote.manualEntries || []));
           state.reportedWeeks = mergeReportedWeeks(state.reportedWeeks, normalizeReportedWeeks(remote.reportedWeeks || []));
           state.contracts = mergeContracts(state.contracts, normalizeContracts(remote.contracts || []));
           if (remote.settings) state.settings = mergeSettings(remote.settings);
-          if (remote.lastSync && (!state.lastSync || new Date(remote.lastSync) > new Date(state.lastSync))) {
+          if (!preserveClearedHourlyData && remote.lastSync && (!state.lastSync || new Date(remote.lastSync) > new Date(state.lastSync))) {
             state.lastSync = remote.lastSync;
           }
-          if (state.rows.length && state.source === 'waiting') state.source = 'remote';
+          if (!preserveClearedHourlyData && state.rows.length && state.source === 'waiting') state.source = 'remote';
         }
         state.remoteReady = true;
         state.remoteStatus = 'synced';
         saveProfile();
-        if (state.rows.length || state.manualEntries.length || state.reportedWeeks.length || state.contracts.length) queueRemoteSave();
+        if (!remoteIdentityMismatch && (state.hourlyDataClearPending || state.rows.length || state.manualEntries.length || state.reportedWeeks.length || state.contracts.length || state.smIdentity)) queueRemoteSave();
       } catch (error) {
         state.remoteReady = false;
         state.remoteStatus = 'local-only';
       }
       startExchangeRateRefresh();
       render();
+      window.setTimeout(maybePromptForInitialSetup, 0);
     }
 
     async function pushRemoteProfile() {
@@ -1017,10 +1102,15 @@
             manualEntries: state.manualEntries,
             reportedWeeks: state.reportedWeeks,
             contracts: state.contracts,
+            smIdentity: state.smIdentity || '',
             lastSync: state.lastSync
           })
         });
         if (!response.ok) throw new Error('Cloud sync unavailable');
+        if (state.hourlyDataClearPending) {
+          state.hourlyDataClearPending = false;
+          saveProfile();
+        }
         state.remoteStatus = 'synced';
         render();
       } catch (error) {
@@ -1050,8 +1140,10 @@
         state.manualEntries = normalizeManualEntries(saved.manualEntries || []);
         state.reportedWeeks = normalizeReportedWeeks(saved.reportedWeeks || []);
         state.contracts = normalizeContracts(saved.contracts || []);
+        state.smIdentity = normalizeSmIdentity(saved.smIdentity || '');
         state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
         state.lastSync = saved.lastSync || null;
+        state.hourlyDataClearPending = saved.hourlyDataClearPending === true;
         state.autoRefresh = saved.autoRefresh !== false;
         state.helperStatus = null;
         state.exchangeRateStatus = 'idle';
@@ -1638,7 +1730,8 @@
         const normalized = {
           date: field(row, ['date', 'Date', 'day'], ''),
           time: field(row, ['time', 'Time', 'hour'], ''),
-          workedHours: numberValue(field(row, ['workedHours', 'Worked Hours', 'worked', 'hours', 'Work'], 0)),
+          agent: normalizeSmIdentity(field(row, ['agent', 'Agent', 'name'], '')),
+          workedHours: numberValue(field(row, ['workedHours', 'workHours', 'Worked Hours', 'Work Hours', 'hours worked', 'worked', 'work', 'hours', 'Work'], 0)),
           ahtSeconds: ahtSecondsFor(row)
         };
         const updatedAt = field(row, ['updatedAt', 'updated_at'], '');
@@ -2831,8 +2924,12 @@
       renderManualEntries();
       renderCapMonitor(range);
 
+      const identityLabel = state.smIdentityWarning
+        ? 'Mismatch — review required'
+        : (state.smIdentity || 'Not linked yet');
       document.getElementById('setupList').innerHTML =
         '<div class="setup-item"><span>Contract dates</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
+        '<div class="setup-item"><span>Linked SM identity</span><strong title="' + escapeHtml(identityLabel) + '">' + escapeHtml(identityLabel) + '</strong></div>' +
         '<div class="setup-item"><span>Duty window</span><strong>' + state.settings.start + ' – ' + state.settings.end + '</strong></div>' +
         '<div class="setup-item"><span>Weekend adherence</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
@@ -2864,8 +2961,230 @@
       setTimeout(function() { root.innerHTML = ''; }, 2600);
     }
 
+    function isModalOpen() {
+      const root = document.getElementById('modalRoot');
+      return Boolean(root && root.firstElementChild);
+    }
+
+    function requestExtensionClearSmRows() {
+      return new Promise(function(resolve) {
+        const requestId = 'smtracker-clear-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+        let settled = false;
+        const finish = function(result) {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeoutId);
+          window.removeEventListener('message', onMessage);
+          resolve(Boolean(result));
+        };
+        const onMessage = function(event) {
+          if (event.source !== window || !event.data || event.data.type !== 'SMTRACKER_CLEAR_LOCAL_SM_ROWS_RESULT') return;
+          if (event.data.requestId !== requestId) return;
+          finish(event.data.ok === true);
+        };
+        const timeoutId = window.setTimeout(function() { finish(false); }, 1500);
+        window.addEventListener('message', onMessage);
+        window.postMessage({
+          type: 'SMTRACKER_CLEAR_LOCAL_SM_ROWS',
+          requestId: requestId
+        }, '*');
+      });
+    }
+
+    function clearDashboardSmRowsForIdentityChange() {
+      state.rows = [];
+      state.source = 'waiting';
+      state.lastSync = null;
+      state.helperStatus = null;
+      state.hourlyDataClearPending = true;
+      pendingHourlyImport = null;
+      saveProfile();
+      render();
+      queueRemoteSave();
+      return requestExtensionClearSmRows();
+    }
+
+    function queuePendingHourlyImport(payload) {
+      const rows = normalizeRows(payload && payload.rows || []);
+      if (!rows.length) return;
+      const next = {
+        rows: rows,
+        replaceExisting: Boolean(payload && payload.replaceExisting),
+        lastSync: payload && payload.lastSync ? payload.lastSync : null
+      };
+      if (!pendingHourlyImport || next.replaceExisting) {
+        pendingHourlyImport = next;
+        return;
+      }
+      pendingHourlyImport.rows = dedupeRows(pendingHourlyImport.rows.concat(next.rows), next.lastSync || undefined);
+      pendingHourlyImport.lastSync = next.lastSync || pendingHourlyImport.lastSync;
+    }
+
+    function applyHourlyImport(payload) {
+      const imported = normalizeRows(payload && payload.rows || []);
+      if (!imported.length) return;
+      if (payload && payload.replaceExisting === true) {
+        state.rows = imported;
+        state.source = 'helper';
+        state.lastSync = payload.lastSync || null;
+        state.hourlyDataClearPending = true;
+        saveProfile();
+        render();
+        if (state.remoteReady) pushRemoteProfile();
+        showToast('SM hourly rows replaced.');
+        return;
+      }
+      state.rows = dedupeRows(state.rows.concat(imported), payload && payload.lastSync || new Date().toISOString());
+      state.source = 'helper';
+      state.lastSync = payload && payload.lastSync || new Date().toISOString();
+      saveProfile();
+      queueRemoteSave();
+      render();
+      showToast('SM hourly rows refreshed.');
+    }
+
+    function openSmIdentityPrompt(sourceName) {
+      const root = document.getElementById('modalRoot');
+      if (!root || isModalOpen()) return;
+      const name = normalizeSmIdentity(sourceName);
+      root.innerHTML =
+        '<div class="modal-backdrop" id="smIdentityBackdrop"><div class="modal">' +
+          '<div class="modal-head"><div><div class="eyebrow">SM identity</div><h2>Link this SM account?</h2><p class="muted">The visible SM table belongs to the following worker identity.</p></div><button class="close" id="closeSmIdentity" type="button">×</button></div>' +
+          '<div class="note"><span>●</span><div><strong>' + escapeHtml(name) + '</strong><br><span class="muted">This name will be linked to the current SMTracker account. The SM and SMTracker login emails do not have to be the same.</span></div></div>' +
+          '<p class="field-help">SMTracker will import rows only when the visible Agent name matches this linked identity. You can change it later in Tracker Settings.</p>' +
+          '<div class="modal-actions"><button type="button" class="btn" id="cancelSmIdentity">Not now</button><button type="button" class="btn btn-primary" id="linkSmIdentity">Link and import</button></div>' +
+        '</div></div>';
+      const cancel = function() {
+        identityPromptDismissedKey = smIdentityKey(name);
+        pendingHourlyImport = null;
+        closeModal();
+      };
+      document.getElementById('closeSmIdentity').addEventListener('click', cancel);
+      document.getElementById('cancelSmIdentity').addEventListener('click', cancel);
+      document.getElementById('smIdentityBackdrop').addEventListener('click', function(event) {
+        if (event.target.id === 'smIdentityBackdrop') cancel();
+      });
+      document.getElementById('linkSmIdentity').addEventListener('click', function() {
+        state.smIdentity = name;
+        state.smIdentityWarning = null;
+        resetIdentityWarning();
+        saveProfile();
+        queueRemoteSave();
+        closeModal();
+        showToast('SM identity linked.');
+      });
+    }
+
+    function openSmIdentityMismatch(sourceNames) {
+      const names = (Array.isArray(sourceNames) ? sourceNames : []).map(normalizeSmIdentity).filter(Boolean);
+      const observed = names.length ? names.join(', ') : 'more than one SM worker name';
+      const expected = normalizeSmIdentity(state.smIdentity) || 'No SM identity is linked to this account';
+      const key = [smIdentityKey(expected), names.map(smIdentityKey).join('|')].join('::');
+      state.smIdentityWarning = { expected: expected, observed: observed };
+      render();
+      if (identityWarningShownKey === key || isModalOpen()) return;
+      identityWarningShownKey = key;
+      const root = document.getElementById('modalRoot');
+      root.innerHTML =
+        '<div class="modal-backdrop" id="smIdentityMismatchBackdrop"><div class="modal">' +
+          '<div class="modal-head"><div><div class="eyebrow">SM identity</div><h2>SM identity mismatch</h2><p class="muted">No new SM rows were imported.</p></div><button class="close" id="closeSmIdentityMismatch" type="button">×</button></div>' +
+          '<div class="auth-error" style="display:block"><strong>Linked identity:</strong> ' + escapeHtml(expected) + '<br><strong>Table identity:</strong> ' + escapeHtml(observed) + '</div>' +
+          '<p class="field-help">Check that the correct SM page and SMTracker account are open. To intentionally change the linked worker, open Tracker Settings. Existing SM rows are unchanged.</p>' +
+          '<div class="modal-actions"><button type="button" class="btn" id="closeSmIdentityMismatchBottom">Close</button><button type="button" class="btn btn-primary" id="openSmIdentitySettings">Open Tracker Settings</button></div>' +
+        '</div></div>';
+      const close = function() { closeModal(); };
+      document.getElementById('closeSmIdentityMismatch').addEventListener('click', close);
+      document.getElementById('closeSmIdentityMismatchBottom').addEventListener('click', close);
+      document.getElementById('smIdentityMismatchBackdrop').addEventListener('click', function(event) {
+        if (event.target.id === 'smIdentityMismatchBackdrop') close();
+      });
+      document.getElementById('openSmIdentitySettings').addEventListener('click', function() {
+        closeModal();
+        openSettings();
+      });
+    }
+
+    async function handleHourlyDataMessage(data) {
+      state.helperStatus = data && data.helperStatus || state.helperStatus;
+      const imported = normalizeRows(data && data.rows || []);
+      if (!imported.length) {
+        render();
+        showToast(state.helperStatus && state.helperStatus.tableFound
+          ? 'The helper found SM but parsed no rows.'
+          : 'No SM hourly rows are available yet.');
+        return;
+      }
+      const payload = {
+        rows: imported,
+        replaceExisting: Boolean(data && data.replaceExisting),
+        lastSync: data && data.lastSync ? data.lastSync : null
+      };
+      if (isModalOpen()) {
+        queuePendingHourlyImport(payload);
+        return;
+      }
+      if (!hasValidContract() && initialSetupPromptShownKey !== state.email) {
+        queuePendingHourlyImport(payload);
+        maybePromptForInitialSetup();
+        return;
+      }
+      await processHourlyImport(payload);
+    }
+
+    async function processHourlyImport(payload) {
+      if (!payload || !Array.isArray(payload.rows) || !payload.rows.length) return;
+      if (isModalOpen()) {
+        queuePendingHourlyImport(payload);
+        return;
+      }
+      const names = sourceSmIdentityNames(payload.rows);
+      if (!state.smIdentity && names.length > 1) {
+        openSmIdentityMismatch(names);
+        return;
+      }
+      if (hasUnidentifiedSmRows(payload.rows)) {
+        const observed = names.length ? names.concat(['Some rows have no worker name']) : ['No worker name found in the incoming SM rows'];
+        openSmIdentityMismatch(observed);
+        return;
+      }
+      if (state.smIdentity) {
+        const matchingRows = rowsForSmIdentity(payload.rows, state.smIdentity);
+        if (names.length && !matchingRows.some(function(row) { return !isSyntheticSmRow(row); })) {
+          openSmIdentityMismatch(names);
+          return;
+        }
+        if (!matchingRows.length) return;
+        applyHourlyImport(Object.assign({}, payload, { rows: matchingRows }));
+        return;
+      }
+      const sourceName = names[0] || '';
+      if (!state.smIdentity && sourceName) {
+        if (identityPromptDismissedKey === smIdentityKey(sourceName)) return;
+        pendingHourlyImport = payload;
+        openSmIdentityPrompt(sourceName);
+        return;
+      }
+      applyHourlyImport(payload);
+    }
+
+    function processPendingHourlyImport() {
+      if (isModalOpen() || !pendingHourlyImport) return;
+      const payload = pendingHourlyImport;
+      pendingHourlyImport = null;
+      processHourlyImport(payload).catch(function(error) {
+        console.error('SMTracker hourly import failed.', error);
+      });
+    }
+
+    function maybePromptForInitialSetup() {
+      if (!state.email || initialSetupPromptShownKey === state.email || hasValidContract() || isModalOpen() || state.remoteStatus === 'loading') return;
+      initialSetupPromptShownKey = state.email;
+      openSettings({ onboarding: true });
+    }
+
     function closeModal() {
       document.getElementById('modalRoot').innerHTML = '';
+      window.setTimeout(processPendingHourlyImport, 0);
     }
 
     function openAccountSettings() {
@@ -2989,11 +3308,36 @@
     function renderContractStatus(range) {
       const root = document.getElementById('contractNotice');
       if (!root) return;
-      if (!range || range.invalid || !contractHasEnded(range)) {
+      if (!range || range.invalid) {
+        root.className = 'contract-notice';
+        root.hidden = false;
+        const invalid = Boolean(range && range.invalid);
+        root.innerHTML =
+          '<div class="contract-notice-copy"><strong>' + (invalid ? 'Contract dates need attention' : 'Finish setting up your tracker') + '</strong><span>' + (invalid ? 'Enter a valid contract start and end date before using contract-based totals.' : 'Add your contract dates and review the schedule, targets, caps, and pay settings so the dashboard can calculate your metrics.') + '</span></div>' +
+          '<button class="btn" type="button" id="contractNoticeBtn">' + (invalid ? 'Fix contract settings' : 'Set up tracker') + '</button>';
+        document.getElementById('contractNoticeBtn').addEventListener('click', function() {
+          openSettings({ onboarding: true });
+        });
+        return;
+      }
+      if (state.smIdentityWarning) {
+        root.className = 'contract-notice identity-warning';
+        root.hidden = false;
+        root.innerHTML =
+          '<div class="contract-notice-copy"><strong>SM identity mismatch</strong><span>Expected ' + escapeHtml(state.smIdentityWarning.expected) + ', but the table shows ' + escapeHtml(state.smIdentityWarning.observed) + '. No new rows were imported.</span></div>' +
+          '<button class="btn" type="button" id="contractNoticeBtn">Review identity</button>';
+        document.getElementById('contractNoticeBtn').addEventListener('click', function() {
+          openSettings();
+        });
+        return;
+      }
+      if (!contractHasEnded(range)) {
+        root.className = 'contract-notice';
         root.hidden = true;
         root.innerHTML = '';
         return;
       }
+      root.className = 'contract-notice';
       root.hidden = false;
       root.innerHTML =
         '<div class="contract-notice-copy"><strong>Contract ended on ' + escapeHtml(formatDate(range.end)) + '</strong><span>Final duty boundary: ' + escapeHtml(formatDateTime(contractEndBoundary(range))) + '. Start a new contract to continue tracking hours.</span></div>' +
@@ -3148,6 +3492,7 @@
         state.source = 'waiting';
         state.lastSync = null;
         state.helperStatus = null;
+        state.hourlyDataClearPending = false;
         state.contractPromptDismissedKey = '';
         contractPromptShownKey = '';
         dashboardView = 'active';
@@ -3160,16 +3505,33 @@
       });
     }
 
-    function openSettings() {
+    function openSettings(options) {
+      const onboarding = Boolean(options && options.onboarding);
       const days = [0,1,2,3,4,5,6];
       const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
       const payMode = pay.exchangeRateMode === 'manual' ? 'manual' : 'automatic';
+      const contractRequired = onboarding ? ' required' : '';
+      const modalEyebrow = onboarding ? 'First-time setup' : 'Tracker rules';
+      const modalTitle = onboarding ? 'Set up your tracker' : 'Tracker Settings';
+      const modalIntro = onboarding
+        ? 'Enter your current contract details and review the tracker defaults. You can change them later.'
+        : 'Update the contract, schedule, targets, and pay rules used by the dashboard.';
+      const cancelLabel = onboarding ? 'Set up later' : 'Cancel';
+      const saveLabel = onboarding ? 'Save setup' : 'Save settings';
+      const contractHelp = onboarding
+        ? 'These dates are inclusive shift-start dates. For overnight duty, the effective end is the next duty start after the displayed end date. You can start a different contract later from Tracker Settings.'
+        : 'These dates are inclusive shift-start dates. For overnight duty, the effective end is the next duty start after the displayed end date. To start a different contract without losing this one, use New contract below.';
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="modalBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">Tracker rules</div><h2>Tracker Settings</h2></div><button class="close" id="closeModal">×</button></div>' +
+          '<div class="modal-head"><div><div class="eyebrow">' + modalEyebrow + '</div><h2>' + modalTitle + '</h2><p class="muted">' + modalIntro + '</p></div><button class="close" id="closeModal">×</button></div>' +
+          (onboarding ? '<div class="note"><span>●</span><div><strong>Contract dates are required for the dashboard calculations.</strong><br>Other settings start with defaults and can be adjusted to match your current agreement.</div></div>' : '') +
           '<form id="settingsForm">' +
-            '<div class="field-grid"><div class="field"><label for="contractStart">Contract start date</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"></div><div class="field"><label for="contractEnd">Contract end date</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"></div></div>' +
-            '<div class="field-help">These dates are inclusive shift-start dates. For overnight duty, the effective end is the next duty start after the displayed end date. To start a different contract without losing this one, use New contract below.</div>' +
+            '<div class="week-label settings-section-label">SM identity</div>' +
+            '<div class="field"><label for="smWorkerName">Linked SM worker name (optional)</label><input id="smWorkerName" type="text" maxlength="120" value="' + escapeHtml(state.smIdentity || '') + '" placeholder="Exact name shown in the SM Agent column"></div>' +
+            '<div class="field-help">SMTracker compares this with the visible Agent name in incoming SM rows. Leave it blank to confirm the identity when the first rows arrive. The SM and SMTracker login emails may be different.</div>' +
+            '<div class="week-label settings-section-label">Contract</div>' +
+            '<div class="field-grid"><div class="field"><label for="contractStart">Contract start date</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"' + contractRequired + '></div><div class="field"><label for="contractEnd">Contract end date</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"' + contractRequired + '></div></div>' +
+            '<div class="field-help">' + contractHelp + '</div>' +
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
@@ -3183,13 +3545,14 @@
             '<div class="field-grid"><div class="field"><label for="excessRate">Excess/additional hourly rate (USD)</label><input id="excessRate" type="number" min="0" step=".01" value="' + pay.excessRate + '" required></div><div class="field"><label for="usdToPhp">USD to PHP rate</label><input id="usdToPhp" type="number" min="0" step=".01" value="' + pay.usdToPhp + '"' + (payMode === 'automatic' ? ' disabled' : '') + ' required></div></div>' +
             '<div class="field-grid"><div class="field"><label for="exchangeRateMode">USD to PHP rate source</label><select id="exchangeRateMode"><option value="automatic"' + (payMode === 'automatic' ? ' selected' : '') + '>Automatic (Google Finance)</option><option value="manual"' + (payMode === 'manual' ? ' selected' : '') + '>Manual</option></select></div><div class="field-help">Automatic mode updates the USD to PHP rate whenever Auto-refresh runs. The saved rate is used if the service is unavailable.</div></div>' +
             '<div class="field-help">Example: 180 hours = $360 minimum. Every hour above 180 earns $2. The fallback rate is only used when automatic mode cannot update.</div>' +
-            '<div class="modal-actions"><button type="button" class="btn btn-quiet" id="newContractBtn">New contract</button><span class="modal-spacer"></span><button type="button" class="btn" id="cancelSettings">Cancel</button><button type="submit" class="btn btn-primary">Save settings</button></div>' +
+            '<div class="modal-actions">' + (onboarding ? '' : '<button type="button" class="btn btn-quiet" id="newContractBtn">New contract</button>') + '<span class="modal-spacer"></span><button type="button" class="btn" id="cancelSettings">' + cancelLabel + '</button><button type="submit" class="btn btn-primary">' + saveLabel + '</button></div>' +
           '</form>' +
         '</div></div>';
       document.getElementById('closeModal').addEventListener('click', closeModal);
       document.getElementById('cancelSettings').addEventListener('click', closeModal);
       document.getElementById('modalBackdrop').addEventListener('click', function(event) { if (event.target.id === 'modalBackdrop') closeModal(); });
-      document.getElementById('newContractBtn').addEventListener('click', openNewContract);
+      const newContractButton = document.getElementById('newContractBtn');
+      if (newContractButton) newContractButton.addEventListener('click', openNewContract);
       const exchangeRateModeControl = document.getElementById('exchangeRateMode');
       const usdToPhpControl = document.getElementById('usdToPhp');
       function updateExchangeRateInput() {
@@ -3199,9 +3562,10 @@
       }
       exchangeRateModeControl.addEventListener('change', updateExchangeRateInput);
       updateExchangeRateInput();
-      document.getElementById('settingsForm').addEventListener('submit', function(event) {
+      document.getElementById('settingsForm').addEventListener('submit', async function(event) {
         event.preventDefault();
         const selected = Array.from(document.querySelectorAll('input[name="adherenceDay"]:checked')).map(function(input) { return Number(input.value); });
+        const nextSmIdentity = normalizeSmIdentity(document.getElementById('smWorkerName').value);
         const contractStart = document.getElementById('contractStart').value;
         const contractEnd = document.getElementById('contractEnd').value;
         const minimumPaidHours = numberValue(document.getElementById('minimumPaidHours').value);
@@ -3209,11 +3573,22 @@
         const excessRate = numberValue(document.getElementById('excessRate').value);
         const usdToPhp = numberValue(document.getElementById('usdToPhp').value);
         const exchangeRateMode = document.getElementById('exchangeRateMode').value === 'manual' ? 'manual' : 'automatic';
+        if (onboarding && (!contractStart || !contractEnd)) { showToast('Enter both contract dates to finish setup.'); return; }
+        if (nextSmIdentity && !smIdentityKey(nextSmIdentity)) { showToast('Enter a valid SM worker name or leave it blank.'); return; }
         if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both contract dates.'); return; }
         if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Contract end date must be on or after the start date.'); return; }
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
         if (minimumPaidHours <= 0) { showToast('Minimum paid hours must be greater than zero.'); return; }
         if (minimumFee < 0 || excessRate < 0 || usdToPhp <= 0) { showToast('Enter valid non-negative pay values and a PHP conversion rate.'); return; }
+        const identityChanged = Boolean(state.smIdentity) && smIdentityKey(nextSmIdentity) !== smIdentityKey(state.smIdentity);
+        let extensionRowsCleared = true;
+        if (identityChanged) {
+          if (!window.confirm('Changing or removing the linked SM name will clear this account’s imported SM rows and the extension’s saved SM rows. Manual hours, contract history, and CB records will not be changed. Continue?')) return;
+          extensionRowsCleared = await clearDashboardSmRowsForIdentityChange();
+        }
+        state.smIdentity = nextSmIdentity;
+        state.smIdentityWarning = null;
+        resetIdentityWarning();
         state.settings.contractStart = contractStart;
         state.settings.contractEnd = contractEnd;
         state.settings.start = document.getElementById('startTime').value;
@@ -3242,7 +3617,8 @@
         closeModal();
         render();
         startExchangeRateRefresh();
-        showToast('Tracker Settings saved.');
+        if (onboarding) initialSetupPromptShownKey = state.email;
+        showToast(extensionRowsCleared ? (onboarding ? 'Tracker setup saved.' : 'Tracker Settings saved.') : 'Settings saved, but the extension rows could not be cleared. Reload the extension before importing the new SM identity.');
       });
     }
 
@@ -3266,6 +3642,11 @@
       dashboardView = 'active';
       state.user = user;
       state.email = String(user.email || '').toLowerCase();
+      initialSetupPromptShownKey = '';
+      pendingHourlyImport = null;
+      identityWarningShownKey = '';
+      identityPromptDismissedKey = '';
+      state.smIdentityWarning = null;
       if (!loadProfile(state.email)) {
         state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
         state.rows = [];
@@ -3276,9 +3657,11 @@
         state.lastSync = null;
         state.autoRefresh = true;
         state.helperStatus = null;
+        state.hourlyDataClearPending = false;
         state.exchangeRateStatus = 'idle';
         state.exchangeRateError = '';
         state.contractPromptDismissedKey = '';
+        state.smIdentity = '';
         saveProfile();
       }
       state.remoteReady = false;
@@ -3290,6 +3673,7 @@
         refreshStaffMeData(false);
         pullRemoteProfile();
       }, 150);
+      window.setTimeout(maybePromptForInitialSetup, 350);
     }
 
     async function submitAuth(mode) {
@@ -3369,6 +3753,11 @@
       state.user = null;
       state.helperStatus = null;
       state.contracts = [];
+      pendingHourlyImport = null;
+      initialSetupPromptShownKey = '';
+      identityWarningShownKey = '';
+      identityPromptDismissedKey = '';
+      state.smIdentityWarning = null;
       state.remoteReady = false;
       state.remoteStatus = 'unknown';
       stopAutoRefresh();
@@ -3512,6 +3901,7 @@
       }
     });
 
+    window.__smtrackerDashboardClearHandlerInstalled = true;
     window.addEventListener('message', function(event) {
       if (!state.email || !event.data) return;
 
@@ -3521,28 +3911,23 @@
         return;
       }
 
-      if (event.data.type !== 'STAFFME_HOURLY_DATA') return;
-
-      try {
-        state.helperStatus = event.data.helperStatus || state.helperStatus;
-        const imported = normalizeRows(event.data.rows || []);
-        if (!imported.length) {
-          render();
-          showToast(state.helperStatus && state.helperStatus.tableFound
-            ? 'The helper found StaffMe but parsed no rows.'
-            : 'No StaffMe hourly rows are available yet.');
-          return;
-        }
-        state.rows = dedupeRows(state.rows.concat(imported), event.data.lastSync || new Date().toISOString());
-        state.source = 'helper';
-        state.lastSync = event.data.lastSync || new Date().toISOString();
+      if (event.data.type === 'SMTRACKER_CLEAR_DASHBOARD_DATA') {
+        state.rows = [];
+        state.source = 'waiting';
+        state.lastSync = null;
+        state.hourlyDataClearPending = true;
         saveProfile();
-        queueRemoteSave();
         render();
-        showToast('StaffMe hourly rows refreshed.');
-      } catch (error) {
-        showToast('Hourly data could not be read.');
+        if (state.remoteReady) pushRemoteProfile();
+        showToast('SM hourly data cleared.');
+        return;
       }
+
+      if (event.data.type !== 'STAFFME_HOURLY_DATA') return;
+      handleHourlyDataMessage(event.data).catch(function(error) {
+        console.error('SMTracker hourly data could not be processed.', error);
+        showToast('Hourly data could not be read.');
+      });
     });
 
     render();

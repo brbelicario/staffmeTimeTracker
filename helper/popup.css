@@ -1,0 +1,23 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; min-width: 330px; background: #0d1117; color: #f0f6fc; font-family: "Segoe UI", Arial, sans-serif; }
+body { padding: 14px; }
+main { width: 100%; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; }
+.brand-dot { width: 9px; height: 9px; border-radius: 50%; background: #58a6ff; }
+.version { color: #8b949e; font-size: 10px; }
+.status-card { background: #161b22; border: 1px solid #30363d; border-radius: 9px; padding: 11px; }
+.status-card + .status-card { margin-top: 8px; }
+.status-line { display: flex; justify-content: space-between; color: #56e39f; font-size: 11px; font-weight: 800; }
+.task { margin-top: 10px; color: #58a6ff; font-family: Consolas, monospace; font-size: 16px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary { margin-top: 5px; color: #8b949e; font-size: 11px; line-height: 1.35; }
+.buttons { display: grid; gap: 7px; margin-top: 11px; }
+button { width: 100%; border: 0; border-radius: 6px; background: #374151; color: #f0f6fc; padding: 8px 10px; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+button:hover { filter: brightness(1.15); }
+button:disabled { cursor: wait; opacity: .65; }
+button.primary { background: #1f6feb; }
+button.muted { background: #252b35; color: #c9d1d9; }
+.instructions { margin-top: 12px; padding-top: 10px; border-top: 1px solid #30363d; }
+h2 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8b949e; }
+p { margin: 5px 0; font-size: 11px; line-height: 1.4; color: #c9d1d9; }
+p.small { color: #6e7681; }

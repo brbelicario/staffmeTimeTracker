@@ -1,4 +1,126 @@
 (() => {
+  if (!window.__smtrackerAdminBridgeInstalled) {
+    window.__smtrackerAdminBridgeInstalled = true;
+
+    let adminRequestSequence = 0;
+
+    function requestAdmin(action, payload) {
+      return new Promise((resolve, reject) => {
+        const requestId = `smtracker-admin-${Date.now()}-${adminRequestSequence++}`;
+        const onMessage = (event) => {
+          if (event.source !== window || !event.data || event.data.type !== "SMTRACKER_ADMIN_RESULT") return;
+          if (event.data.requestId !== requestId) return;
+          window.removeEventListener("message", onMessage);
+          window.clearTimeout(timeoutId);
+          if (event.data.ok) resolve(event.data.result);
+          else reject(new Error(event.data.error || "SMTracker admin action failed."));
+        };
+        const timeoutId = window.setTimeout(() => {
+          window.removeEventListener("message", onMessage);
+          reject(new Error("SMTracker admin tools are not available in this frame."));
+        }, 3000);
+
+        window.addEventListener("message", onMessage);
+        window.postMessage({
+          type: "SMTRACKER_ADMIN_ACTION",
+          action,
+          payload: payload || null,
+          requestId
+        }, "*");
+      });
+    }
+
+    window.SMTrackerAdmin = Object.freeze({
+      open() {
+        window.postMessage({ type: "SMTRACKER_ADMIN_OPEN" }, "*");
+        return "SMTracker admin menu requested.";
+      },
+      close() {
+        window.postMessage({ type: "SMTRACKER_ADMIN_CLOSE" }, "*");
+        return "SMTracker admin menu closed.";
+      },
+      status() {
+        return requestAdmin("status");
+      },
+      forceScan() {
+        return requestAdmin("forceScan");
+      },
+      clearRows() {
+        return requestAdmin("clearRows");
+      },
+      addTestRow(row) {
+        return requestAdmin("addTestRow", row);
+      },
+      removeTestRows() {
+        return requestAdmin("removeTestRows");
+      }
+    });
+  }
+
+  // The dashboard only needs the console admin bridge. Keep the SM network
+  // hook limited to the actual SM source page.
+  if (location.hostname === "staffmetimetracker.pages.dev") {
+    if (!window.__smtrackerDashboardClearFallbackInstalled) {
+      window.__smtrackerDashboardClearFallbackInstalled = true;
+
+      function dashboardProfileEmail() {
+        const elements = [
+          document.getElementById("profileEmail"),
+          document.getElementById("profileMenuEmail"),
+          document.getElementById("profileDropdownEmail")
+        ];
+        for (const element of elements) {
+          const value = String(element && (element.textContent || element.value) || "")
+            .trim()
+            .toLowerCase();
+          if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return value;
+        }
+        return "";
+      }
+
+      async function clearLegacyDashboardCopy() {
+        if (window.__smtrackerDashboardClearHandlerInstalled === true) return;
+
+        const email = dashboardProfileEmail();
+        if (!email) throw new Error("The current SMTracker account could not be identified.");
+        const key = `staffme-tracker:${email}`;
+        const raw = window.localStorage.getItem(key);
+        if (!raw) throw new Error("The current SMTracker profile was not found.");
+
+        const profile = JSON.parse(raw);
+        profile.rows = [];
+        profile.source = "waiting";
+        profile.lastSync = null;
+        profile.hourlyDataClearPending = false;
+        window.localStorage.setItem(key, JSON.stringify(profile));
+
+        const response = await window.fetch("/api/sync", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            settings: profile.settings || {},
+            rows: [],
+            manualEntries: Array.isArray(profile.manualEntries) ? profile.manualEntries : [],
+            reportedWeeks: Array.isArray(profile.reportedWeeks) ? profile.reportedWeeks : [],
+            contracts: Array.isArray(profile.contracts) ? profile.contracts : [],
+            lastSync: null
+          })
+        });
+        if (!response.ok) throw new Error("The SMTracker account copy could not be cleared.");
+        window.location.reload();
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.source !== window || !event.data || event.data.type !== "SMTRACKER_CLEAR_DASHBOARD_DATA") return;
+        clearLegacyDashboardCopy().catch((error) => {
+          console.error("[SMTracker]", error);
+        });
+      });
+    }
+    return;
+  }
+
   if (window.__staffMeTimeTrackerNetworkHook) return;
   window.__staffMeTimeTrackerNetworkHook = true;
 
@@ -41,7 +163,7 @@
       date,
       time,
       agent: clean(propertyValue(value, ["agent", "name"])),
-      workedHours: numberValue(propertyValue(value, ["workedHours", "worked hours", "worked", "hours"])),
+      workedHours: numberValue(propertyValue(value, ["workedHours", "workHours", "worked hours", "work hours", "hours worked", "worked", "work", "hours"])),
       evaluations: numberValue(propertyValue(value, ["totalEvaluations", "total evaluations", "evaluations"])),
       chat: numberValue(propertyValue(value, ["chat"])),
       idcheck: numberValue(propertyValue(value, ["idcheck", "id check", "idCheck"])),
@@ -55,7 +177,7 @@
     const time = clean(value[1]);
     if (!date || !time || date.length > 40 || time.length > 30) return null;
     if (!/[A-Za-z]{3,}|\d{1,2}[\/-]\d{1,2}/.test(date)) return null;
-    if (!/\\d{1,2}:\\d{2}|[ap]m/i.test(time)) return null;
+    if (!/^\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]m)?$/i.test(time)) return null;
 
     return {
       date,
