@@ -99,14 +99,14 @@ function renderSm(stored) {
     setStatus(statusElement, "Blocked", "#ff887f");
     summaryElement.textContent = detectedIdentity
       ? `Detected: ${detectedIdentity}`
-      : "SM worker identity could not be confirmed";
+      : "Beta Tracker identity could not be confirmed";
     detailElement.textContent = hourlyStatus.identityMismatch
-      ? `Dashboard is linked to ${hourlyStatus.dashboardIdentity || "another SM worker"}; no rows were sent.`
+      ? `Time Tracker is linked to ${hourlyStatus.dashboardIdentity || "another worker"}; no Beta Tracker data were sent.`
       : hourlyStatus.identityState === "ambiguous"
-      ? "More than one worker identity was found; no new rows were saved."
+      ? "More than one Beta Tracker identity was found; no new data were saved."
       : hourlyStatus.identityState === "missing"
-        ? "The hourly rows have no Agent name; no new rows were saved."
-        : "No new SM rows were saved.";
+        ? "The Beta Tracker hourly data have no Agent name; no new data were saved."
+        : "No new Beta Tracker data were saved.";
   } else if (ready) {
     setStatus(statusElement, "Ready", "#56e39f");
     summaryElement.textContent = detectedIdentity
@@ -115,16 +115,16 @@ function renderSm(stored) {
     detailElement.textContent = `${rows.length} saved row${rows.length === 1 ? "" : "s"} · ${identities.length} worker${identities.length === 1 ? "" : "s"} stored · ${formatAge(stored[SM_LAST_SYNC_KEY])}`;
   } else if (smPage) {
     setStatus(statusElement, "Open", "#f59e0b");
-    summaryElement.textContent = detectedIdentity ? `Detected: ${detectedIdentity}` : "SM page is open";
+    summaryElement.textContent = detectedIdentity ? `Detected: ${detectedIdentity}` : "Beta Tracker page is open";
     detailElement.textContent = rows.length
       ? `${rows.length} saved row${rows.length === 1 ? "" : "s"}; waiting for the table`
       : "Waiting for the hourly table to load";
   } else {
     setStatus(statusElement, "Waiting", "#8b949e");
-    summaryElement.textContent = "Open the SM tracker page";
+    summaryElement.textContent = "Open the Beta Tracker page";
     detailElement.textContent = rows.length
       ? `${rows.length} saved row${rows.length === 1 ? "" : "s"} across ${identities.length} worker${identities.length === 1 ? "" : "s"}; ${formatAge(stored[SM_LAST_SYNC_KEY])}`
-      : "No SM page is currently detected";
+      : "No Beta Tracker page is currently detected";
   }
 }
 
@@ -177,7 +177,7 @@ document.getElementById("tracking-button").addEventListener("click", async () =>
 });
 
 document.getElementById("clear-sm-button").addEventListener("click", async () => {
-  if (!confirm("Clear all locally saved SM hourly rows? CB tracking will not be affected.")) return;
+  if (!confirm("Clear all locally saved Beta Tracker hourly rows? CB tracking will not be affected.")) return;
 
   const button = document.getElementById("clear-sm-button");
   button.disabled = true;

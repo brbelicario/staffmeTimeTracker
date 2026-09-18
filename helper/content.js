@@ -435,7 +435,7 @@
         "<section class='dialog' role='dialog' aria-modal='true' aria-labelledby='smtracker-consent-title'>",
         "<div class='eyebrow'>SMTracker by B. Belicario</div>",
         "<h2 id='smtracker-consent-title'>Allow time-tracking data access?</h2>",
-        "<p>SMTracker reads the visible SM hourly table to calculate your work hours. It stores the rows in this browser and makes them available to your SMTracker dashboard when you refresh data.</p>",
+        "<p>Time Tracker reads the visible Beta Tracker hourly table to calculate your work hours. It stores the rows in this browser and makes them available to your Time Tracker dashboard when you refresh data.</p>",
         "<p class='muted'>It does not read passwords or cookies. Read the <a href='https://staffmetimetracker.pages.dev/privacy-policy.html' target='_blank' rel='noopener'>privacy policy</a> before continuing.</p>",
         "<div class='buttons'>",
         "<button class='decline' type='button' data-action='decline'>Not now</button>",
@@ -477,8 +477,8 @@
   }
 
   function adminFrameLabel() {
-    if (isTrackerPage) return window.top === window ? "Top SMTracker dashboard" : "SMTracker dashboard iframe";
-    return window.top === window ? "Top SM page" : "SM page iframe";
+    if (isTrackerPage) return window.top === window ? "Top Time Tracker dashboard" : "Time Tracker dashboard iframe";
+    return window.top === window ? "Top Beta Tracker page" : "Beta Tracker page iframe";
   }
 
   function notifyTrackerDataRefresh(replaceExisting) {
@@ -554,7 +554,7 @@
     }
 
     if (action === "forceScan") {
-      if (!staffMeScanNow) throw new Error("The SM scanner is not ready in this frame.");
+      if (!staffMeScanNow) throw new Error("The Beta Tracker scanner is not ready in this frame.");
       await staffMeScanNow(true);
       return getAdminSnapshot();
     }
@@ -568,7 +568,7 @@
         TEST_ROWS_KEY,
         INCLUDE_TEST_ROWS_KEY
       ]);
-      if (!ok) throw new Error("Could not clear the local SM rows.");
+      if (!ok) throw new Error("Could not clear the local Beta Tracker rows.");
       notifyDashboardDataCleared();
       return getAdminSnapshot();
     }
@@ -718,7 +718,7 @@
             <div><div class="title">SMTracker Admin</div><div class="subtitle">Local testing tools</div></div>
             <button class="icon" data-action="close" title="Close">×</button>
           </div>
-          <div class="notice">These tools do not change the original SM data or CB tracking. Clearing SM hourly data also clears the rows saved in this SMTracker account.</div>
+          <div class="notice">These tools do not change the original Beta Tracker data or CB tracking. Clearing Beta Tracker hourly data also clears the rows saved in this Time Tracker account.</div>
           <div class="section-title">Storage</div>
           <div class="stats">
             <div class="stat"><span>Real rows</span><strong data-value="realRows">—</strong></div>
@@ -749,8 +749,8 @@
             <button data-action="remove-tests">Remove test rows</button>
           </div>
           <div class="actions">
-            <button data-action="scan">Force SM scan</button>
-            <button class="danger" data-action="clear">Clear SM hourly data</button>
+            <button data-action="scan">Force Beta Tracker scan</button>
+            <button class="danger" data-action="clear">Clear Beta Tracker hourly data</button>
           </div>
           <div class="message" data-role="message"></div>
           <div class="foot">Test rows are kept separately and are included in the dashboard only when enabled.</div>
@@ -784,10 +784,10 @@
       if (confirm("Remove all SMTracker test rows?")) run("removeTestRows", null, "Test rows removed.");
     });
     shadow.querySelector("[data-action='scan']").addEventListener("click", () => {
-      run("forceScan", null, "SM scan completed.");
+      run("forceScan", null, "Beta Tracker scan completed.");
     });
     shadow.querySelector("[data-action='clear']").addEventListener("click", () => {
-      if (confirm("Clear all saved SM hourly data, including test rows?")) run("clearRows", null, "SM hourly data cleared.");
+      if (confirm("Clear all saved Beta Tracker data, including test rows?")) run("clearRows", null, "Beta Tracker data cleared.");
     });
 
     (document.body || document.documentElement).appendChild(adminHost);
@@ -953,7 +953,7 @@
               type: "SMTRACKER_CLEAR_LOCAL_SM_ROWS_RESULT",
               requestId: event.data.requestId || null,
               ok: Boolean(ok),
-              error: ok ? null : "Could not clear the local SM rows."
+              error: ok ? null : "Could not clear the local Beta Tracker rows."
             }, "*");
           })
           .catch((error) => {
@@ -962,7 +962,7 @@
               type: "SMTRACKER_CLEAR_LOCAL_SM_ROWS_RESULT",
               requestId: event.data.requestId || null,
               ok: false,
-              error: String(error && error.message || error || "Could not clear the local SM rows.")
+              error: String(error && error.message || error || "Could not clear the local Beta Tracker rows.")
             }, "*");
           });
         return;

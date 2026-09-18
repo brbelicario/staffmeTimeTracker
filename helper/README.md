@@ -4,23 +4,23 @@ Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance
 
 ## What it does
 
-### SM
+### Beta Tracker
 
-- Reads the visible SM “Hourly AHT (Last 5 Days)” table after you approve the on-page data-access notice.
+- Reads the visible StaffMe Beta Tracker “Hourly AHT (Last 5 Days)” table after you approve the on-page data-access notice.
 - Supports the framed preview page, including random Google-hosted frame subdomains, and standard HTML table/row layouts.
-- Stores normalized hourly rows in separate local buckets for each detected SM worker identity.
+- Stores normalized hourly rows in separate local buckets for each detected Beta Tracker identity.
 - Makes only the identity-matching bucket available when the SMTracker dashboard requests a refresh.
-- Shows the detected worker identity and blocks rows when a table has no Agent name or contains multiple identities.
-- The dashboard asks new accounts to set contract dates and can link the visible SM worker name, so rows from multiple SM accounts in one browser cannot be mixed into the wrong tracker account.
+- Shows the detected StaffMe Beta Tracker identity and blocks rows when a table has no Agent name or contains multiple identities.
+- The dashboard asks new accounts to set contract dates and can link the visible Beta Tracker identity, so rows from multiple Beta Tracker accounts in one browser cannot be mixed into the wrong Time Tracker account.
 - Shows local connection, setup, and identity status.
 
 ### Local testing tools
 
-- On an SM page or the SMTracker dashboard, open DevTools Console and run `SMTrackerAdmin.open()` to open the local admin menu.
+- On the Beta Tracker page or the Time Tracker dashboard, open DevTools Console and run `SMTrackerAdmin.open()` to open the local admin menu.
 - The menu shows the scan source, frame, parsed rows, stored rows, detected worker identity, stored identities, and consent state.
-- It can force a scan, clear the saved SM hourly data, and create/remove separate synthetic test rows.
-- Clearing SM hourly data also clears the dashboard account copy; it does not alter the original SM table.
-- Synthetic test rows are included in the dashboard only when the menu's test-row option is enabled. They never change the original SM data or CB records.
+- It can force a scan, clear the saved Beta Tracker hourly data, and create/remove separate synthetic test rows.
+- Clearing Beta Tracker hourly data also clears the dashboard account copy; it does not alter the original Beta Tracker table.
+- Synthetic test rows are included in the dashboard only when the menu's test-row option is enabled. They never change the original Beta Tracker data or CB records.
 
 ### CB
 
@@ -40,7 +40,7 @@ The direct privacy policy is:
 
 https://staffmetimetracker.pages.dev/privacy-policy.html
 
-The SM data-access notice asks for affirmative permission before reading SM hourly data. CB tracking reads only the visible task ID and queue status needed for timing.
+The Beta Tracker data-access notice asks for affirmative permission before reading Beta Tracker hourly data. CB tracking reads only the visible task ID and queue status needed for timing.
 
 ## Test installation
 
@@ -50,7 +50,7 @@ The SM data-access notice asks for affirmative permission before reading SM hour
 4. Choose Load unpacked.
 5. Select the extracted folder that contains `manifest.json`.
 6. If already installed, click its Reload button.
-7. Open the SM page and approve the on-page data-access notice.
+7. Open the Beta Tracker page and approve the on-page data-access notice.
 8. Open the CB queue and use the compact tracker strip.
 
-The dashboard remains empty until real SM rows are received. The CB timer remains separate from the SM hourly records.
+The dashboard remains empty until real Beta Tracker rows are received. The CB timer remains separate from the Beta Tracker hourly records.

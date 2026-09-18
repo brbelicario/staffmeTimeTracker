@@ -389,6 +389,7 @@
     .field { margin: 14px 0; }
     .field label { display: block; font-weight: 800; font-size: .78rem; margin-bottom: 7px; }
     .field-help { color: var(--muted); font-size: .75rem; margin-top: 6px; line-height: 1.45; }
+    .field-help a { color: var(--cyan); font-weight: 800; }
     .settings-section-label { margin-top: 20px; }
     .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .manual-entry-row { padding: 14px 0; border-bottom: 1px solid #edf0f4; }
@@ -856,6 +857,7 @@
   <div id="toastRoot"></div>
 
   <script>
+    const BETA_TRACKER_URL = 'https://script.google.com/macros/s/AKfycbz-ZTA3IBu5Kmz7Fh7UIIVf9YB6W8qCjJllACUsl_mIh6WIsD8wgkATuP-c6Ust0-dQ/exec';
     const DEFAULT_SETTINGS = {
       start: '22:00',
       end: '07:00',
@@ -1121,10 +1123,10 @@
           if (response.status === 409 && failure && failure.code === 'SM_IDENTITY_MISMATCH') {
             const observed = Array.isArray(failure.observedIdentities) && failure.observedIdentities.length
               ? failure.observedIdentities.join(', ')
-              : 'a different SM worker';
-            state.smIdentityWarning = { expected: state.smIdentity || 'Linked SM worker', observed: observed };
+              : 'a different Beta Tracker worker';
+            state.smIdentityWarning = { expected: state.smIdentity || 'Linked Time Tracker identity', observed: observed };
             render();
-            showToast('Cloud sync blocked: the SM worker identity does not match this account.');
+            showToast('Cloud sync blocked: the Beta Tracker identity does not match this Time Tracker account.');
           }
           throw new Error((failure && failure.error) || 'Cloud sync unavailable');
         }
@@ -2851,32 +2853,32 @@
       const identityMismatch = Boolean(state.helperStatus && state.helperStatus.identityMismatch);
       const detectedIdentity = normalizeSmIdentity(state.helperStatus && (state.helperStatus.observedSmIdentity || state.helperStatus.identity));
       const identityDetail = identityMismatch
-        ? 'Detected ' + (detectedIdentity || 'a different SM worker') + ', but this dashboard is linked to ' + (state.smIdentity || 'another SM worker') + '. No new rows were imported.'
+        ? 'StaffMe Beta Tracker identity: ' + (detectedIdentity || 'a different worker') + ' does not match the Time Tracker identity: ' + (state.smIdentity || 'another worker') + '. No new data from Beta Tracker were imported.'
         : detectedIdentity
-          ? 'Detected SM worker: ' + detectedIdentity + '.'
+          ? 'Detected StaffMe Beta Tracker identity: ' + detectedIdentity + '.'
           : '';
       const sourceLabel = identityMismatch
         ? 'IDENTITY BLOCKED'
         : state.source === 'helper'
-        ? 'STAFFME DATA'
-        : (hasRows ? 'STORED STAFFME' : (state.helperStatus ? 'HELPER READY' : 'WAITING'));
+        ? 'BETA TRACKER DATA'
+        : (hasRows ? 'STORED BETA TRACKER' : (state.helperStatus ? 'HELPER READY' : 'WAITING'));
       document.getElementById('syncTitle').textContent = identityMismatch
-        ? 'SM identity mismatch — rows blocked'
+        ? 'Time Tracker and Beta Tracker mismatch — rows blocked'
         : hasRows
-        ? 'StaffMe hourly data is loaded'
+        ? 'Beta Tracker hourly data is loaded'
         : (tableFound && parsedRows === 0
-          ? 'StaffMe table detected, but no rows were parsed'
-          : 'Waiting for StaffMe hourly data');
+          ? 'Beta Tracker table detected, but no rows were parsed'
+          : 'Waiting for Beta Tracker hourly data');
       document.getElementById('syncStatus').textContent = sourceLabel;
       const baseSyncDetail = hasRows
         ? (state.lastSync
           ? state.rows.length + ' hourly rows received from StaffMe. Last sync ' + new Date(state.lastSync).toLocaleString() + '.'
           : state.rows.length + ' hourly rows are stored in this browser.')
-        : (tableFound && parsedRows === 0
-          ? 'The helper is running, but the table structure needs adjustment. Click Refresh data after reloading the helper.'
+          : (tableFound && parsedRows === 0
+          ? 'The helper is running, but the Beta Tracker table structure needs adjustment. Click Refresh data after reloading the helper.'
           : state.helperStatus
-            ? 'The helper responded, but no StaffMe table was detected yet. Keep the Hourly AHT table open, then refresh.'
-            : 'The helper has not responded. Reload the extension, keep StaffMe open, then click Refresh data.');
+            ? 'The helper responded, but no Beta Tracker table was detected yet. Keep the Hourly AHT table open, then refresh.'
+            : 'The helper has not responded. Reload the extension, keep Beta Tracker open, then click Refresh data.');
       const remoteDetail = state.remoteStatus === 'synced'
         ? ' Cloud copy is available on other devices.'
         : state.remoteStatus === 'local-only'
@@ -2961,7 +2963,7 @@
         : (state.smIdentity || 'Not linked yet');
       document.getElementById('setupList').innerHTML =
         '<div class="setup-item"><span>Contract dates</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
-        '<div class="setup-item"><span>Linked SM identity</span><strong title="' + escapeHtml(identityLabel) + '">' + escapeHtml(identityLabel) + '</strong></div>' +
+        '<div class="setup-item"><span>Linked Time Tracker identity</span><strong title="' + escapeHtml(identityLabel) + '">' + escapeHtml(identityLabel) + '</strong></div>' +
         '<div class="setup-item"><span>Duty window</span><strong>' + state.settings.start + ' – ' + state.settings.end + '</strong></div>' +
         '<div class="setup-item"><span>Weekend adherence</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
         '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
@@ -3063,7 +3065,7 @@
         saveProfile();
         render();
         if (state.remoteReady) pushRemoteProfile();
-        showToast('SM hourly rows replaced.');
+        showToast('Beta Tracker hourly rows replaced.');
         return;
       }
       state.rows = dedupeRows(state.rows.concat(imported), payload && payload.lastSync || new Date().toISOString());
@@ -3072,7 +3074,7 @@
       saveProfile();
       queueRemoteSave();
       render();
-      showToast('SM hourly rows refreshed.');
+      showToast('Beta Tracker hourly rows refreshed.');
     }
 
     function openSmIdentityPrompt(sourceName) {
@@ -3081,9 +3083,9 @@
       const name = normalizeSmIdentity(sourceName);
       root.innerHTML =
         '<div class="modal-backdrop" id="smIdentityBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">SM identity</div><h2>Link this SM account?</h2><p class="muted">The visible SM table belongs to the following worker identity.</p></div><button class="close" id="closeSmIdentity" type="button">×</button></div>' +
-          '<div class="note"><span>●</span><div><strong>' + escapeHtml(name) + '</strong><br><span class="muted">This name will be linked to the current SMTracker account. The SM and SMTracker login emails do not have to be the same.</span></div></div>' +
-          '<p class="field-help">SMTracker will import rows only when the visible Agent name matches this linked identity. You can change it later in Tracker Settings.</p>' +
+          '<div class="modal-head"><div><div class="eyebrow">Beta Tracker identity</div><h2>Link this Beta Tracker account?</h2><p class="muted">The visible Beta Tracker table belongs to the following worker identity.</p></div><button class="close" id="closeSmIdentity" type="button">×</button></div>' +
+          '<div class="note"><span>●</span><div><strong>' + escapeHtml(name) + '</strong><br><span class="muted">This name will be linked to the current Time Tracker account. The Beta Tracker and Time Tracker login emails do not have to be the same.</span></div></div>' +
+          '<p class="field-help">Time Tracker will import rows only when the visible Agent name matches this linked Beta Tracker identity. You can change it later in Tracker Settings.</p>' +
           '<div class="modal-actions"><button type="button" class="btn" id="cancelSmIdentity">Not now</button><button type="button" class="btn btn-primary" id="linkSmIdentity">Link and import</button></div>' +
         '</div></div>';
       const cancel = function() {
@@ -3103,14 +3105,14 @@
         saveProfile();
         queueRemoteSave();
         closeModal();
-        showToast('SM identity linked.');
+        showToast('Beta Tracker identity linked.');
       });
     }
 
     function openSmIdentityMismatch(sourceNames) {
       const names = (Array.isArray(sourceNames) ? sourceNames : []).map(normalizeSmIdentity).filter(Boolean);
-      const observed = names.length ? names.join(', ') : 'more than one SM worker name';
-      const expected = normalizeSmIdentity(state.smIdentity) || 'No SM identity is linked to this account';
+      const observed = names.length ? names.join(', ') : 'more than one Beta Tracker worker name';
+      const expected = normalizeSmIdentity(state.smIdentity) || 'No Time Tracker identity is linked to this account';
       const key = [smIdentityKey(expected), names.map(smIdentityKey).join('|')].join('::');
       state.smIdentityWarning = { expected: expected, observed: observed };
       render();
@@ -3119,9 +3121,9 @@
       const root = document.getElementById('modalRoot');
       root.innerHTML =
         '<div class="modal-backdrop" id="smIdentityMismatchBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">SM identity</div><h2>SM identity mismatch</h2><p class="muted">No new SM rows were imported.</p></div><button class="close" id="closeSmIdentityMismatch" type="button">×</button></div>' +
-          '<div class="auth-error" style="display:block"><strong>Linked identity:</strong> ' + escapeHtml(expected) + '<br><strong>Table identity:</strong> ' + escapeHtml(observed) + '</div>' +
-          '<p class="field-help">Check that the correct SM page and SMTracker account are open. To intentionally change the linked worker, open Tracker Settings. Existing SM rows are unchanged.</p>' +
+          '<div class="modal-head"><div><div class="eyebrow">Identity check</div><h2>Time Tracker and Beta Tracker Mismatch</h2><p class="muted">No new data from Beta Tracker were imported.</p></div><button class="close" id="closeSmIdentityMismatch" type="button">×</button></div>' +
+          '<div class="auth-error" style="display:block"><strong>Time Tracker identity:</strong> ' + escapeHtml(expected) + '<br><strong>StaffMe Beta Tracker identity:</strong> ' + escapeHtml(observed) + '</div>' +
+          '<p class="field-help">Check that the correct <a href="' + BETA_TRACKER_URL + '" target="_blank" rel="noopener noreferrer">Beta Tracker</a> and Time Tracker accounts are open. To intentionally change the linked worker, open Tracker Settings. Existing Beta Tracker rows are unchanged.</p>' +
           '<div class="modal-actions"><button type="button" class="btn" id="closeSmIdentityMismatchBottom">Close</button><button type="button" class="btn btn-primary" id="openSmIdentitySettings">Open Tracker Settings</button></div>' +
         '</div></div>';
       const close = function() { closeModal(); };
@@ -3147,7 +3149,7 @@
       if (data && (data.identityMismatch === true || data.identityAmbiguous === true)) {
         const observed = Array.isArray(data.observedIdentities) && data.observedIdentities.length
           ? data.observedIdentities
-          : [data.observedSmIdentity || 'More than one SM worker identity'];
+          : [data.observedSmIdentity || 'More than one Beta Tracker worker identity'];
         openSmIdentityMismatch(observed);
         render();
         return;
@@ -3157,7 +3159,7 @@
         render();
         showToast(state.helperStatus && state.helperStatus.tableFound
           ? 'The helper found SM but parsed no rows.'
-          : 'No SM hourly rows are available yet.');
+          : 'No Beta Tracker hourly rows are available yet.');
         return;
       }
       const payload = {
@@ -3189,7 +3191,7 @@
         return;
       }
       if (hasUnidentifiedSmRows(payload.rows)) {
-        const observed = names.length ? names.concat(['Some rows have no worker name']) : ['No worker name found in the incoming SM rows'];
+        const observed = names.length ? names.concat(['Some rows have no worker name']) : ['No worker name found in the incoming Beta Tracker data'];
         openSmIdentityMismatch(observed);
         return;
       }
@@ -3370,7 +3372,7 @@
         root.className = 'contract-notice identity-warning';
         root.hidden = false;
         root.innerHTML =
-          '<div class="contract-notice-copy"><strong>SM identity mismatch</strong><span>Expected ' + escapeHtml(state.smIdentityWarning.expected) + ', but the table shows ' + escapeHtml(state.smIdentityWarning.observed) + '. No new rows were imported.</span></div>' +
+          '<div class="contract-notice-copy"><strong>Time Tracker and Beta Tracker Mismatch</strong><span>Time Tracker expects ' + escapeHtml(state.smIdentityWarning.expected) + ', but StaffMe Beta Tracker shows ' + escapeHtml(state.smIdentityWarning.observed) + '. No new data from Beta Tracker were imported.</span></div>' +
           '<button class="btn" type="button" id="contractNoticeBtn">Review identity</button>';
         document.getElementById('contractNoticeBtn').addEventListener('click', function() {
           openSettings();
@@ -3572,9 +3574,9 @@
           '<div class="modal-head"><div><div class="eyebrow">' + modalEyebrow + '</div><h2>' + modalTitle + '</h2><p class="muted">' + modalIntro + '</p></div><button class="close" id="closeModal">×</button></div>' +
           (onboarding ? '<div class="note"><span>●</span><div><strong>Contract dates are required for the dashboard calculations.</strong><br>Other settings start with defaults and can be adjusted to match your current agreement.</div></div>' : '') +
           '<form id="settingsForm">' +
-            '<div class="week-label settings-section-label">SM identity</div>' +
-            '<div class="field"><label for="smWorkerName">Linked SM worker name (optional)</label><input id="smWorkerName" type="text" maxlength="120" value="' + escapeHtml(state.smIdentity || '') + '" placeholder="Exact name shown in the SM Agent column"></div>' +
-            '<div class="field-help">SMTracker compares this with the visible Agent name in incoming SM rows. Leave it blank to confirm the identity when the first rows arrive. The SM and SMTracker login emails may be different.</div>' +
+            '<div class="week-label settings-section-label">Beta Tracker identity</div>' +
+            '<div class="field"><label for="smWorkerName">Linked Beta Tracker identity (optional)</label><input id="smWorkerName" type="text" maxlength="120" value="' + escapeHtml(state.smIdentity || '') + '" placeholder="Exact name shown in the Beta Tracker Agent column"></div>' +
+            '<div class="field-help">Time Tracker compares this with the visible Agent name in incoming Beta Tracker rows. Leave it blank to confirm the identity when the first rows arrive. The Beta Tracker and Time Tracker login emails may be different.</div>' +
             '<div class="week-label settings-section-label">Contract</div>' +
             '<div class="field-grid"><div class="field"><label for="contractStart">Contract start date</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"' + contractRequired + '></div><div class="field"><label for="contractEnd">Contract end date</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"' + contractRequired + '></div></div>' +
             '<div class="field-help">' + contractHelp + '</div>' +
@@ -3620,7 +3622,7 @@
         const usdToPhp = numberValue(document.getElementById('usdToPhp').value);
         const exchangeRateMode = document.getElementById('exchangeRateMode').value === 'manual' ? 'manual' : 'automatic';
         if (onboarding && (!contractStart || !contractEnd)) { showToast('Enter both contract dates to finish setup.'); return; }
-        if (nextSmIdentity && !smIdentityKey(nextSmIdentity)) { showToast('Enter a valid SM worker name or leave it blank.'); return; }
+        if (nextSmIdentity && !smIdentityKey(nextSmIdentity)) { showToast('Enter a valid Beta Tracker worker name or leave it blank.'); return; }
         if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both contract dates.'); return; }
         if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Contract end date must be on or after the start date.'); return; }
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
@@ -3629,7 +3631,7 @@
         const identityChanged = Boolean(state.smIdentity) && smIdentityKey(nextSmIdentity) !== smIdentityKey(state.smIdentity);
         let extensionRowsCleared = true;
         if (identityChanged) {
-          if (!window.confirm('Changing or removing the linked SM name will clear this account’s imported SM rows and the extension’s saved SM rows. Manual hours, contract history, and CB records will not be changed. Continue?')) return;
+          if (!window.confirm('Changing or removing the linked Beta Tracker identity will clear this account’s imported Beta Tracker rows and the extension’s saved Beta Tracker rows. Manual hours, contract history, and CB records will not be changed. Continue?')) return;
           extensionRowsCleared = await clearDashboardSmRowsForIdentityChange();
         }
         state.smIdentity = nextSmIdentity;
@@ -3664,7 +3666,7 @@
         render();
         startExchangeRateRefresh();
         if (onboarding) initialSetupPromptShownKey = state.email;
-        showToast(extensionRowsCleared ? (onboarding ? 'Tracker setup saved.' : 'Tracker Settings saved.') : 'Settings saved, but the extension rows could not be cleared. Reload the extension before importing the new SM identity.');
+        showToast(extensionRowsCleared ? (onboarding ? 'Tracker setup saved.' : 'Tracker Settings saved.') : 'Settings saved, but the extension rows could not be cleared. Reload the extension before importing the new Beta Tracker identity.');
       });
     }
 
@@ -3922,7 +3924,7 @@
       autoRefreshRemaining = 60;
       scheduleAutoRefresh();
       updateAutoRefreshControls();
-      if (showMessage) showToast('Requesting the latest StaffMe rows...');
+      if (showMessage) showToast('Requesting the latest Beta Tracker rows...');
     }
 
     function refreshWhenVisible() {
@@ -3974,7 +3976,7 @@
         saveProfile();
         render();
         if (state.remoteReady) pushRemoteProfile();
-        showToast('SM hourly data cleared.');
+        showToast('Beta Tracker hourly data cleared.');
         return;
       }
 
