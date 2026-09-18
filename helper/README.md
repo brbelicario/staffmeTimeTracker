@@ -27,6 +27,7 @@ Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance
 
 - Reads only the visible task ID from the CB compliance queue.
 - Shows the compact v1.13-style tracker strip fixed at the top of the webpage viewport, with reserved space so page controls remain visible.
+- Starts tracking automatically when the first valid task ID appears; the Start button remains available after a manual stop.
 - Calculates Task AHT and current-hour average AHT.
 - Pauses when the queue closes or its heartbeat stops.
 - Resumes when the same task ID returns.

@@ -5,6 +5,7 @@ const QUEUE_HEARTBEAT_GAP_SECONDS = 4;
 const DEFAULT_STATE = {
   version: STATE_VERSION,
   tracking: false,
+  autoStartBlocked: false,
   paused: false,
   pausedAt: null,
   pauseReason: null,
@@ -32,6 +33,7 @@ function normalizeState(raw) {
   state.queueTabs = raw && raw.queueTabs && typeof raw.queueTabs === "object" ? raw.queueTabs : {};
   state.completedTasks = Number.isFinite(Number(state.completedTasks)) ? Number(state.completedTasks) : 0;
   state.totalActiveSeconds = Number.isFinite(Number(state.totalActiveSeconds)) ? Number(state.totalActiveSeconds) : 0;
+  state.autoStartBlocked = Boolean(state.autoStartBlocked);
   if (state.pauseReason !== "queue" && state.pauseReason !== "manual") {
     state.pauseReason = state.paused ? "manual" : null;
   }
@@ -135,6 +137,7 @@ async function setTracking(enabled) {
 
   if (enabled) {
     state.tracking = true;
+    state.autoStartBlocked = false;
     clearPause(state);
     state.sessionStartedAt = now;
     state.currentTaskId = cleanTaskId(state.lastObservedTaskId);
@@ -142,6 +145,7 @@ async function setTracking(enabled) {
     state.lastEventAt = now;
   } else {
     state.tracking = false;
+    state.autoStartBlocked = true;
     clearPause(state);
     state.lastEventAt = now;
     // The active task is intentionally not finalized here. A new task ID is
@@ -194,6 +198,13 @@ async function observeTask(taskId, sender) {
   state.lastPageReadyAt = now;
 
   if (!state.tracking) {
+    if (!state.autoStartBlocked) {
+      state.tracking = true;
+      clearPause(state);
+      state.sessionStartedAt = now;
+      state.currentTaskId = cleanId;
+      state.currentTaskStartedAt = now;
+    }
     state.lastEventAt = now;
     return writeState(state);
   }
@@ -273,6 +284,7 @@ async function resetSession() {
   const now = nowSeconds();
   const fresh = cloneDefaultState();
   fresh.tracking = tracking;
+  fresh.autoStartBlocked = state.autoStartBlocked;
   fresh.pauseReason = null;
   fresh.sessionStartedAt = tracking ? now : null;
   fresh.currentTaskId = tracking ? latestId : null;
