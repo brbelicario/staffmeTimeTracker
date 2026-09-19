@@ -893,6 +893,7 @@
       remoteReady: false,
       user: null,
       smIdentity: '',
+      smIdentityHistory: [],
       smIdentityWarning: null,
       exchangeRateStatus: 'idle',
       exchangeRateError: '',
@@ -972,6 +973,7 @@
         source: state.source,
         lastSync: state.lastSync,
         smIdentity: state.smIdentity || '',
+        smIdentityHistory: normalizeSmIdentityHistory(state.smIdentityHistory),
         hourlyDataClearPending: state.hourlyDataClearPending === true,
         autoRefresh: state.autoRefresh !== false,
         contractPromptDismissedKey: state.contractPromptDismissedKey || ''
@@ -1005,14 +1007,43 @@
         .trim();
     }
 
+    function normalizeSmIdentityHistory(values) {
+      const seen = new Set();
+      const result = [];
+      (Array.isArray(values) ? values : []).forEach(function(value) {
+        const identity = normalizeSmIdentity(value);
+        const key = smIdentityKey(identity);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        result.push(identity);
+      });
+      return result.slice(0, 50);
+    }
+
+    function mergeSmIdentityHistory(history) {
+      const values = Array.isArray(history) ? history.slice() : [];
+      Array.prototype.slice.call(arguments, 1).forEach(function(identity) {
+        if (Array.isArray(identity)) values.push.apply(values, identity);
+        else if (identity) values.push(identity);
+      });
+      return normalizeSmIdentityHistory(values);
+    }
+
     function smIdentityTokens(value) {
       return smIdentityKey(value).split(' ').filter(function(token) { return token.length > 1; });
     }
 
     function smIdentitiesMatch(sourceName, expectedName) {
+      const sourceKey = smIdentityKey(sourceName);
+      const expectedKey = smIdentityKey(expectedName);
+      if (!sourceKey || !expectedKey) return false;
+      if (sourceKey === expectedKey) return true;
       const sourceTokens = new Set(smIdentityTokens(sourceName));
-      const expectedTokens = smIdentityTokens(expectedName);
-      return expectedTokens.length > 0 && expectedTokens.every(function(token) { return sourceTokens.has(token); });
+      const expectedTokens = new Set(smIdentityTokens(expectedName));
+      if (sourceTokens.size < 2 || expectedTokens.size < 2) return false;
+      const sourceIsShorter = Array.from(sourceTokens).every(function(token) { return expectedTokens.has(token); });
+      const expectedIsShorter = Array.from(expectedTokens).every(function(token) { return sourceTokens.has(token); });
+      return sourceIsShorter || expectedIsShorter;
     }
 
     function isSyntheticSmRow(row) {
@@ -1043,6 +1074,15 @@
       });
     }
 
+    function rowsForSmIdentities(rows, identities) {
+      const allowed = normalizeSmIdentityHistory(identities);
+      return (Array.isArray(rows) ? rows : []).filter(function(row) {
+        return isSyntheticSmRow(row) || allowed.some(function(identity) {
+          return smIdentitiesMatch(row && row.agent, identity);
+        });
+      });
+    }
+
     function hasValidContract() {
       const range = contractRange();
       return Boolean(range && !range.invalid);
@@ -1065,16 +1105,26 @@
         const preserveClearedHourlyData = state.hourlyDataClearPending === true;
         let remoteIdentityMismatch = false;
         if (remote.found) {
+          state.smIdentityHistory = mergeSmIdentityHistory(
+            state.smIdentityHistory,
+            remote.smIdentityHistory,
+            remote.smIdentity
+          );
           if (Object.prototype.hasOwnProperty.call(remote, 'smIdentity')) {
             state.smIdentity = normalizeSmIdentity(remote.smIdentity);
           }
           if (!preserveClearedHourlyData) {
             const remoteRows = normalizeRows(remote.rows || []);
             const remoteNames = sourceSmIdentityNames(remoteRows);
-            const remoteMatchingRows = state.smIdentity && remoteNames.length
-              ? rowsForSmIdentity(remoteRows, state.smIdentity)
+            const remoteMatchingRows = state.smIdentityHistory.length
+              ? rowsForSmIdentities(remoteRows, state.smIdentityHistory)
               : remoteRows;
-            if (state.smIdentity && remoteNames.length && !remoteMatchingRows.some(function(row) { return !isSyntheticSmRow(row); })) {
+            const hasUnexpectedRemoteIdentity = remoteNames.some(function(name) {
+              return !state.smIdentityHistory.some(function(identity) {
+                return smIdentitiesMatch(name, identity);
+              });
+            });
+            if (state.smIdentity && remoteNames.length && hasUnexpectedRemoteIdentity) {
               state.smIdentityWarning = { expected: state.smIdentity, observed: remoteNames.join(', ') };
               remoteIdentityMismatch = true;
             } else {
@@ -1117,6 +1167,7 @@
             reportedWeeks: state.reportedWeeks,
             contracts: state.contracts,
             smIdentity: state.smIdentity || '',
+            smIdentityHistory: normalizeSmIdentityHistory(state.smIdentityHistory),
             lastSync: state.lastSync
           })
         });
@@ -1167,6 +1218,7 @@
         state.reportedWeeks = normalizeReportedWeeks(saved.reportedWeeks || []);
         state.contracts = normalizeContracts(saved.contracts || []);
         state.smIdentity = normalizeSmIdentity(saved.smIdentity || '');
+        state.smIdentityHistory = mergeSmIdentityHistory(saved.smIdentityHistory, state.smIdentity);
         state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
         state.lastSync = saved.lastSync || null;
         state.hourlyDataClearPending = saved.hourlyDataClearPending === true;
@@ -3028,16 +3080,10 @@
       });
     }
 
-    function clearDashboardSmRowsForIdentityChange() {
-      state.rows = [];
-      state.source = 'waiting';
-      state.lastSync = null;
+    function clearExtensionSmRowsForIdentityChange() {
       state.helperStatus = null;
-      state.hourlyDataClearPending = true;
       pendingHourlyImport = null;
-      saveProfile();
       render();
-      queueRemoteSave();
       return requestExtensionClearSmRows();
     }
 
@@ -3103,6 +3149,7 @@
       });
       document.getElementById('linkSmIdentity').addEventListener('click', function() {
         state.smIdentity = name;
+        state.smIdentityHistory = mergeSmIdentityHistory(state.smIdentityHistory, name);
         state.smIdentityWarning = null;
         resetIdentityWarning();
         saveProfile();
@@ -3145,7 +3192,7 @@
       // Do not accept a response from an old/current helper request that did
       // not carry this dashboard's linked identity. The dashboard will issue
       // a guarded request when the extension refresh signal arrives.
-      if (state.smIdentity && (!data || data.expectedSmIdentity !== state.smIdentity)) {
+      if (state.smIdentity && (!data || smIdentityKey(data.expectedSmIdentity) !== smIdentityKey(state.smIdentity))) {
         return;
       }
       state.helperStatus = data && data.helperStatus || state.helperStatus;
@@ -3631,12 +3678,13 @@
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
         if (minimumPaidHours <= 0) { showToast('Minimum paid hours must be greater than zero.'); return; }
         if (minimumFee < 0 || excessRate < 0 || usdToPhp <= 0) { showToast('Enter valid non-negative pay values and a PHP conversion rate.'); return; }
-        const identityChanged = Boolean(state.smIdentity) && smIdentityKey(nextSmIdentity) !== smIdentityKey(state.smIdentity);
+        const identityChanged = smIdentityKey(nextSmIdentity) !== smIdentityKey(state.smIdentity);
         let extensionRowsCleared = true;
         if (identityChanged) {
-          if (!window.confirm('Changing or removing the linked Beta Tracker identity will clear this account’s imported Beta Tracker rows and the extension’s saved Beta Tracker rows. Manual hours, contract history, and CB records will not be changed. Continue?')) return;
-          extensionRowsCleared = await clearDashboardSmRowsForIdentityChange();
+          if (!window.confirm('Changing or removing the linked Beta Tracker identity will clear only the extension’s saved Beta Tracker rows. Existing Time Tracker hourly data, manual hours, contract history, and CB records will not be changed. Continue?')) return;
+          extensionRowsCleared = await clearExtensionSmRowsForIdentityChange();
         }
+        state.smIdentityHistory = mergeSmIdentityHistory(state.smIdentityHistory, state.smIdentity, nextSmIdentity);
         state.smIdentity = nextSmIdentity;
         state.smIdentityWarning = null;
         resetIdentityWarning();
@@ -3715,6 +3763,7 @@
         state.exchangeRateError = '';
         state.contractPromptDismissedKey = '';
         state.smIdentity = '';
+        state.smIdentityHistory = [];
         saveProfile();
       }
       state.remoteReady = false;

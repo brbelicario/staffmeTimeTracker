@@ -44,9 +44,29 @@ function identityTokens(value) {
 }
 
 function identitiesMatch(sourceName, expectedName) {
+  const sourceKey = identityKey(sourceName);
+  const expectedKey = identityKey(expectedName);
+  if (!sourceKey || !expectedKey) return false;
+  if (sourceKey === expectedKey) return true;
   const sourceTokens = new Set(identityTokens(sourceName));
-  const expectedTokens = identityTokens(expectedName);
-  return expectedTokens.length > 0 && expectedTokens.every(function(token) { return sourceTokens.has(token); });
+  const expectedTokens = new Set(identityTokens(expectedName));
+  if (sourceTokens.size < 2 || expectedTokens.size < 2) return false;
+  const sourceIsShorter = Array.from(sourceTokens).every(function(token) { return expectedTokens.has(token); });
+  const expectedIsShorter = Array.from(expectedTokens).every(function(token) { return sourceTokens.has(token); });
+  return sourceIsShorter || expectedIsShorter;
+}
+
+function normalizeIdentityHistory(values) {
+  const seen = new Set();
+  const result = [];
+  (Array.isArray(values) ? values : []).forEach(function(value) {
+    const identity = cleanIdentity(value);
+    const key = identityKey(identity);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    result.push(identity);
+  });
+  return result.slice(0, 50);
 }
 
 function isSyntheticRow(row) {
@@ -68,12 +88,13 @@ async function ensureTables(db) {
   await db.batch([
     db.prepare('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT, picture TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)'),
     db.prepare('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL)'),
-    db.prepare('CREATE TABLE IF NOT EXISTS tracker_profiles (profile_key TEXT PRIMARY KEY, settings_json TEXT NOT NULL DEFAULT \'{}\', rows_json TEXT NOT NULL DEFAULT \'[]\', manual_entries_json TEXT NOT NULL DEFAULT \'[]\', reported_weeks_json TEXT NOT NULL DEFAULT \'[]\', contracts_json TEXT NOT NULL DEFAULT \'[]\', sm_identity TEXT NOT NULL DEFAULT \'\', last_sync TEXT, updated_at TEXT NOT NULL)')
+    db.prepare('CREATE TABLE IF NOT EXISTS tracker_profiles (profile_key TEXT PRIMARY KEY, settings_json TEXT NOT NULL DEFAULT \'{}\', rows_json TEXT NOT NULL DEFAULT \'[]\', manual_entries_json TEXT NOT NULL DEFAULT \'[]\', reported_weeks_json TEXT NOT NULL DEFAULT \'[]\', contracts_json TEXT NOT NULL DEFAULT \'[]\', sm_identity TEXT NOT NULL DEFAULT \'\', sm_identity_history_json TEXT NOT NULL DEFAULT \'[]\', last_sync TEXT, updated_at TEXT NOT NULL)')
   ]);
   try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN manual_entries_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
   try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN reported_weeks_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
   try { await db.prepare('ALTER TABLE tracker_profiles ADD COLUMN contracts_json TEXT NOT NULL DEFAULT \'[]\'').run(); } catch (error) {}
   try { await db.prepare("ALTER TABLE tracker_profiles ADD COLUMN sm_identity TEXT NOT NULL DEFAULT ''").run(); } catch (error) {}
+  try { await db.prepare("ALTER TABLE tracker_profiles ADD COLUMN sm_identity_history_json TEXT NOT NULL DEFAULT '[]'").run(); } catch (error) {}
 }
 
 async function userFromSession(request, db) {
@@ -96,16 +117,18 @@ export async function onRequest(context) {
   const legacyKey = await hash(user.email);
 
   if (request.method === 'GET') {
-    let record = await db.prepare('SELECT settings_json, rows_json, manual_entries_json, reported_weeks_json, contracts_json, sm_identity, last_sync, updated_at FROM tracker_profiles WHERE profile_key = ?').bind(key).first();
-    if (!record) record = await db.prepare('SELECT settings_json, rows_json, manual_entries_json, reported_weeks_json, contracts_json, sm_identity, last_sync, updated_at FROM tracker_profiles WHERE profile_key = ?').bind(legacyKey).first();
-    if (!record) return json({ ok: true, found: false, rows: [], manualEntries: [], reportedWeeks: [], contracts: [], smIdentity: '', settings: null });
-    let settings = {}, rows = [], manualEntries = [], reportedWeeks = [], contracts = [];
+    let record = await db.prepare('SELECT settings_json, rows_json, manual_entries_json, reported_weeks_json, contracts_json, sm_identity, sm_identity_history_json, last_sync, updated_at FROM tracker_profiles WHERE profile_key = ?').bind(key).first();
+    if (!record) record = await db.prepare('SELECT settings_json, rows_json, manual_entries_json, reported_weeks_json, contracts_json, sm_identity, sm_identity_history_json, last_sync, updated_at FROM tracker_profiles WHERE profile_key = ?').bind(legacyKey).first();
+    if (!record) return json({ ok: true, found: false, rows: [], manualEntries: [], reportedWeeks: [], contracts: [], smIdentity: '', smIdentityHistory: [], settings: null });
+    let settings = {}, rows = [], manualEntries = [], reportedWeeks = [], contracts = [], smIdentityHistory = [];
     try { settings = JSON.parse(record.settings_json || '{}'); } catch (error) {}
     try { rows = JSON.parse(record.rows_json || '[]'); } catch (error) {}
     try { manualEntries = JSON.parse(record.manual_entries_json || '[]'); } catch (error) {}
     try { reportedWeeks = JSON.parse(record.reported_weeks_json || '[]'); } catch (error) {}
     try { contracts = JSON.parse(record.contracts_json || '[]'); } catch (error) {}
-    return json({ ok: true, found: true, settings: settings, rows: Array.isArray(rows) ? rows : [], manualEntries: Array.isArray(manualEntries) ? manualEntries : [], reportedWeeks: Array.isArray(reportedWeeks) ? reportedWeeks : [], contracts: Array.isArray(contracts) ? contracts : [], smIdentity: String(record.sm_identity || '').trim().slice(0, 120), lastSync: record.last_sync || null, updatedAt: record.updated_at || null });
+    try { smIdentityHistory = JSON.parse(record.sm_identity_history_json || '[]'); } catch (error) {}
+    const smIdentity = cleanIdentity(record.sm_identity || '');
+    return json({ ok: true, found: true, settings: settings, rows: Array.isArray(rows) ? rows : [], manualEntries: Array.isArray(manualEntries) ? manualEntries : [], reportedWeeks: Array.isArray(reportedWeeks) ? reportedWeeks : [], contracts: Array.isArray(contracts) ? contracts : [], smIdentity: smIdentity, smIdentityHistory: normalizeIdentityHistory((Array.isArray(smIdentityHistory) ? smIdentityHistory : []).concat(smIdentity)), lastSync: record.last_sync || null, updatedAt: record.updated_at || null });
   }
 
   if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed.' }, 405);
@@ -117,14 +140,28 @@ export async function onRequest(context) {
   const reportedWeeks = body && Array.isArray(body.reportedWeeks) ? body.reportedWeeks : [];
   const contracts = body && Array.isArray(body.contracts) ? body.contracts : [];
   const smIdentity = body && typeof body.smIdentity === 'string' ? cleanIdentity(body.smIdentity) : '';
+  let existingRecord = await db.prepare('SELECT sm_identity, sm_identity_history_json FROM tracker_profiles WHERE profile_key = ?').bind(key).first();
+  if (!existingRecord) existingRecord = await db.prepare('SELECT sm_identity, sm_identity_history_json FROM tracker_profiles WHERE profile_key = ?').bind(legacyKey).first();
+  let storedIdentityHistory = [];
+  if (existingRecord) {
+    try { storedIdentityHistory = JSON.parse(existingRecord.sm_identity_history_json || '[]'); } catch (error) {}
+  }
+  const smIdentityHistory = normalizeIdentityHistory(
+    (Array.isArray(storedIdentityHistory) ? storedIdentityHistory : [])
+      .concat(body && Array.isArray(body.smIdentityHistory) ? body.smIdentityHistory : [])
+      .concat(smIdentity)
+  );
+  const allowedIdentities = smIdentityHistory;
   const realRows = rows.filter(function(row) { return !isSyntheticRow(row); });
   const rowIdentities = observedIdentities(realRows);
-  if (realRows.length && !smIdentity) {
+  if (realRows.length && !allowedIdentities.length) {
     return json({ ok: false, code: 'SM_IDENTITY_REQUIRED', error: 'SM worker identity is required before hourly rows can be saved.' }, 409);
   }
-  if (realRows.length && smIdentity) {
+  if (realRows.length && allowedIdentities.length) {
     const invalid = realRows.some(function(row) {
-      return !cleanIdentity(row && row.agent) || !identitiesMatch(row.agent, smIdentity);
+      return !cleanIdentity(row && row.agent) || !allowedIdentities.some(function(identity) {
+        return identitiesMatch(row.agent, identity);
+      });
     });
     if (invalid) {
       return json({
@@ -140,8 +177,9 @@ export async function onRequest(context) {
   const manualEntriesJson = JSON.stringify(manualEntries);
   const reportedWeeksJson = JSON.stringify(reportedWeeks);
   const contractsJson = JSON.stringify(contracts);
-  if (rowsJson.length > 2000000 || manualEntriesJson.length > 500000 || reportedWeeksJson.length > 200000 || contractsJson.length > 1000000) return json({ ok: false, error: 'The saved tracker data is too large.' }, 413);
+  const smIdentityHistoryJson = JSON.stringify(smIdentityHistory);
+  if (rowsJson.length > 2000000 || manualEntriesJson.length > 500000 || reportedWeeksJson.length > 200000 || contractsJson.length > 1000000 || smIdentityHistoryJson.length > 50000) return json({ ok: false, error: 'The saved tracker data is too large.' }, 413);
   const now = new Date().toISOString();
-  await db.prepare('INSERT INTO tracker_profiles (profile_key, settings_json, rows_json, manual_entries_json, reported_weeks_json, contracts_json, sm_identity, last_sync, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(profile_key) DO UPDATE SET settings_json = excluded.settings_json, rows_json = excluded.rows_json, manual_entries_json = excluded.manual_entries_json, reported_weeks_json = excluded.reported_weeks_json, contracts_json = excluded.contracts_json, sm_identity = excluded.sm_identity, last_sync = excluded.last_sync, updated_at = excluded.updated_at').bind(key, JSON.stringify(settings), rowsJson, manualEntriesJson, reportedWeeksJson, contractsJson, smIdentity, body && body.lastSync ? String(body.lastSync) : null, now).run();
+  await db.prepare('INSERT INTO tracker_profiles (profile_key, settings_json, rows_json, manual_entries_json, reported_weeks_json, contracts_json, sm_identity, sm_identity_history_json, last_sync, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(profile_key) DO UPDATE SET settings_json = excluded.settings_json, rows_json = excluded.rows_json, manual_entries_json = excluded.manual_entries_json, reported_weeks_json = excluded.reported_weeks_json, contracts_json = excluded.contracts_json, sm_identity = excluded.sm_identity, sm_identity_history_json = excluded.sm_identity_history_json, last_sync = excluded.last_sync, updated_at = excluded.updated_at').bind(key, JSON.stringify(settings), rowsJson, manualEntriesJson, reportedWeeksJson, contractsJson, smIdentity, smIdentityHistoryJson, body && body.lastSync ? String(body.lastSync) : null, now).run();
   return json({ ok: true, saved: true, updatedAt: now });
 }

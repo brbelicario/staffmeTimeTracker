@@ -13,6 +13,7 @@
   let staffMeScanInterval = null;
   let staffMeScanObserver = null;
   let staffMeScanNow = null;
+  let staffMeStorageListener = null;
   let adminHost = null;
 
   function isExtensionContextInvalidated(error) {
@@ -30,6 +31,10 @@
     if (staffMeScanObserver) {
       staffMeScanObserver.disconnect();
       staffMeScanObserver = null;
+    }
+    if (staffMeStorageListener) {
+      try { chrome.storage.onChanged.removeListener(staffMeStorageListener); } catch (error) {}
+      staffMeStorageListener = null;
     }
   }
 
@@ -147,9 +152,16 @@
   }
 
   function identitiesMatch(sourceName, expectedName) {
+    const sourceKey = identityKey(sourceName);
+    const expectedKey = identityKey(expectedName);
+    if (!sourceKey || !expectedKey) return false;
+    if (sourceKey === expectedKey) return true;
     const sourceTokens = new Set(identityTokens(sourceName));
-    const expectedTokens = identityTokens(expectedName);
-    return expectedTokens.length > 0 && expectedTokens.every((token) => sourceTokens.has(token));
+    const expectedTokens = new Set(identityTokens(expectedName));
+    if (sourceTokens.size < 2 || expectedTokens.size < 2) return false;
+    const sourceIsShorter = Array.from(sourceTokens).every((token) => expectedTokens.has(token));
+    const expectedIsShorter = Array.from(expectedTokens).every((token) => sourceTokens.has(token));
+    return sourceIsShorter || expectedIsShorter;
   }
 
   function identityNames(rows) {
@@ -1015,6 +1027,16 @@
         };
 
         staffMeScanNow = scan;
+        staffMeStorageListener = (changes, areaName) => {
+          if (areaName !== "local" || extensionInvalidated) return;
+          const rowsWereCleared = [PROFILES_KEY, STORAGE_KEY, LAST_SYNC_KEY, STATUS_KEY]
+            .some((key) => changes[key] && changes[key].newValue === undefined);
+          if (!rowsWereCleared || !staffMeScanNow) return;
+          window.setTimeout(() => {
+            if (staffMeScanNow) staffMeScanNow(true).catch(handleExtensionError);
+          }, 0);
+        };
+        chrome.storage.onChanged.addListener(staffMeStorageListener);
         window.setTimeout(() => scan(), 1500);
         staffMeScanInterval = window.setInterval(() => scan(), 2500);
         staffMeScanObserver = new MutationObserver(() => scan());
@@ -1032,7 +1054,7 @@
   if (isTrackerPage && window.top === window) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== "local" || extensionInvalidated) return;
-      if (!changes[PROFILES_KEY] && !changes[STORAGE_KEY]) return;
+      if (!changes[PROFILES_KEY] && !changes[STORAGE_KEY] && !changes[LAST_SYNC_KEY] && !changes[STATUS_KEY]) return;
       window.postMessage({ type: "SMTRACKER_EXTENSION_REFRESH" }, "*");
     });
   }
