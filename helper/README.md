@@ -21,7 +21,7 @@ Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance
 - On the Beta Tracker page or the Time Tracker dashboard, open DevTools Console and run `SMTrackerAdmin.open()` to open the local admin menu.
 - The menu shows the scan source, frame, parsed rows, stored rows, detected worker identity, stored identities, and consent state.
 - It can force a scan, clear the saved Beta Tracker hourly data, and create/remove separate synthetic test rows.
-- Clearing Beta Tracker hourly data also clears the dashboard account copy; it does not alter the original Beta Tracker table.
+- Clearing Beta Tracker hourly data also clears the dashboard account copy after the dashboard creates a recovery point; it does not alter the original Beta Tracker table.
 - Synthetic test rows are included in the dashboard only when the menu's test-row option is enabled. They never change the original Beta Tracker data or CB records.
 
 ### CB

@@ -122,6 +122,13 @@
       included in the dashboard's cloud synchronization. The extension itself does not collect passwords
       or session credentials.
     </p>
+    <p>
+      To protect against accidental hourly-data loss, the dashboard creates recovery points before
+      destructive hourly-data changes such as clearing, replacing, or restoring rows. A recovery point
+      contains the same dashboard data already described above and is kept under the signed-in account;
+      restoring a point changes hourly rows only. Cloud recovery points are limited to the most recent
+      30 points, and the browser also keeps a limited local copy for offline recovery.
+    </p>
 
     <h2>Sharing and limited use</h2>
     <p>
@@ -139,11 +146,12 @@
 
     <h2>Storage, retention, and deletion</h2>
     <p>
-      The browser copy of SM rows, connection status, and CB timing records remains in Chrome extension
-      storage until you clear the extension's data or remove the extension. CB timing records can also be
-      reset from the tracker. If you use cloud synchronization, the dashboard profile remains available
-      for the service to restore your tracker until it is deleted. To request deletion of cloud-synchronized
-      tracker data, email
+      The browser copy of SM rows, connection status, CB timing records, and local recovery points remains
+      in Chrome extension or browser storage until you clear the relevant data or remove the extension.
+      CB timing records can also be reset from the tracker. If you use cloud synchronization, the dashboard
+      profile and its limited recovery points remain available for the service to restore your tracker until
+      they are deleted or expire under the recovery retention limit. To request deletion of cloud-synchronized
+      tracker data and recovery points, email
       <a href="mailto:br.belicario@gmail.com">br.belicario@gmail.com</a>.
     </p>
 

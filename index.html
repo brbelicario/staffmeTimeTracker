@@ -448,6 +448,13 @@
     .hourly-page-btn { min-width: 34px; min-height: 34px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: #fff; font-size: .74rem; font-weight: 850; }
     .hourly-page-btn:hover:not(:disabled), .hourly-page-btn.active { border-color: var(--cyan); color: #fff; background: var(--navy); }
     .hourly-page-btn:disabled { color: #aab5c3; background: #f3f5f8; cursor: not-allowed; }
+    .recovery-list { display: grid; gap: 9px; margin-top: 15px; }
+    .recovery-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; border: 1px solid #edf0f4; border-radius: 12px; background: #fbfcfe; }
+    .recovery-item-copy { min-width: 0; }
+    .recovery-item-copy strong { display: block; font-size: .8rem; }
+    .recovery-item-copy span, .recovery-item-copy small { display: block; color: var(--muted); font-size: .71rem; margin-top: 3px; }
+    .recovery-item button { flex: 0 0 auto; }
+    .recovery-source { display: inline-flex; margin-left: 5px; padding: 2px 6px; border-radius: 999px; color: #147d97; background: var(--cyan-soft); font-size: .62rem; font-weight: 850; }
     .report-comparison-details { position: relative; display: inline-flex; margin-left: 6px; vertical-align: middle; }
     .report-comparison-details > summary { list-style: none; }
     .report-comparison-details > summary::-webkit-details-marker { display: none; }
@@ -728,6 +735,7 @@
           <div class="dashboard-tool-group dashboard-actions-group" aria-label="Tracker actions">
             <span class="dashboard-tool-group-label">Actions</span>
             <button class="btn" id="manualAddTopBtn">Add manual hours</button>
+            <button class="btn" id="recoveryBtn">Data recovery</button>
             <button class="btn btn-outline" id="settingsBtn">Tracker Settings</button>
           </div>
         </div>
@@ -891,6 +899,8 @@
       hourlyDataClearPending: false,
       remoteStatus: 'unknown',
       remoteReady: false,
+      remoteRevision: 0,
+      remoteConflict: false,
       user: null,
       smIdentity: '',
       smIdentityHistory: [],
@@ -974,10 +984,148 @@
         lastSync: state.lastSync,
         smIdentity: state.smIdentity || '',
         smIdentityHistory: normalizeSmIdentityHistory(state.smIdentityHistory),
+        remoteRevision: Number(state.remoteRevision) || 0,
         hourlyDataClearPending: state.hourlyDataClearPending === true,
         autoRefresh: state.autoRefresh !== false,
         contractPromptDismissedKey: state.contractPromptDismissedKey || ''
       }));
+    }
+
+    function recoveryStorageKey(email) {
+      return 'staffme-recovery:' + String(email || '').trim().toLowerCase();
+    }
+
+    function recoveryPayload() {
+      return {
+        settings: mergeSettings(state.settings),
+        rows: normalizeRows(state.rows),
+        manualEntries: normalizeManualEntries(state.manualEntries),
+        reportedWeeks: normalizeReportedWeeks(state.reportedWeeks),
+        contracts: normalizeContracts(state.contracts),
+        source: state.source || 'waiting',
+        lastSync: state.lastSync || null,
+        smIdentity: state.smIdentity || '',
+        smIdentityHistory: normalizeSmIdentityHistory(state.smIdentityHistory)
+      };
+    }
+
+    function readLocalRecoverySnapshots() {
+      if (!state.email) return [];
+      try {
+        const value = JSON.parse(localStorage.getItem(recoveryStorageKey(state.email)) || '[]');
+        return Array.isArray(value) ? value : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function writeLocalRecoverySnapshot(snapshot) {
+      try {
+        const snapshots = [snapshot].concat(readLocalRecoverySnapshots()).slice(0, 10);
+        localStorage.setItem(recoveryStorageKey(state.email), JSON.stringify(snapshots));
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function updateLocalRecoverySnapshot(snapshot) {
+      try {
+        const snapshots = readLocalRecoverySnapshots().map(function(existing) {
+          return existing.id === snapshot.id ? snapshot : existing;
+        });
+        localStorage.setItem(recoveryStorageKey(state.email), JSON.stringify(snapshots));
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    async function createRecoverySnapshot(reason) {
+      if (!state.email) return { ok: false, error: 'No signed-in account.' };
+      const payload = recoveryPayload();
+      const localSnapshot = {
+        id: 'local-' + makeId('recovery'),
+        source: 'local',
+        reason: String(reason || 'Before a data change'),
+        createdAt: new Date().toISOString(),
+        revision: Number(state.remoteRevision) || 0,
+        rowCount: payload.rows.length,
+        manualCount: payload.manualEntries.length,
+        payload: payload
+      };
+      const localSaved = writeLocalRecoverySnapshot(localSnapshot);
+      let cloudSnapshot = null;
+      if (state.remoteReady) {
+        try {
+          const response = await fetch('/api/recovery', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'create',
+              reason: reason || 'Before a data change',
+              revision: Number(state.remoteRevision) || 0,
+              payload: payload
+            })
+          });
+          const result = await response.json().catch(function() { return {}; });
+          if (response.ok && result.ok && result.snapshot) cloudSnapshot = result.snapshot;
+        } catch (error) {}
+      }
+      if (cloudSnapshot && localSaved) {
+        localSnapshot.cloudId = cloudSnapshot.id;
+        updateLocalRecoverySnapshot(localSnapshot);
+      }
+      return {
+        ok: Boolean(localSaved || cloudSnapshot),
+        local: localSaved,
+        cloud: Boolean(cloudSnapshot),
+        snapshot: cloudSnapshot || localSnapshot
+      };
+    }
+
+    function recoverySummary(snapshot) {
+      return {
+        id: snapshot.id,
+        source: snapshot.source || 'local',
+        reason: snapshot.reason || 'Before a data change',
+        createdAt: snapshot.createdAt || new Date().toISOString(),
+        revision: Number(snapshot.revision) || 0,
+        rowCount: Number(snapshot.rowCount) || 0,
+        manualCount: Number(snapshot.manualCount) || 0,
+        payload: snapshot.payload || null,
+        cloudId: snapshot.cloudId || ''
+      };
+    }
+
+    async function listRecoverySnapshots() {
+      const local = readLocalRecoverySnapshots().map(recoverySummary);
+      let cloud = [];
+      if (state.remoteReady) {
+        try {
+          const response = await fetch('/api/recovery?mode=list', { cache: 'no-store' });
+          const result = await response.json().catch(function() { return {}; });
+          if (response.ok && result.ok && Array.isArray(result.snapshots)) cloud = result.snapshots.map(recoverySummary);
+        } catch (error) {}
+      }
+      const cloudIds = new Set(cloud.map(function(snapshot) { return snapshot.id; }));
+      const localOnly = local.filter(function(snapshot) {
+        return !cloudIds.has(snapshot.id) && !cloudIds.has(snapshot.cloudId);
+      });
+      return cloud.concat(localOnly).sort(function(a, b) {
+        return String(b.createdAt).localeCompare(String(a.createdAt));
+      }).slice(0, 30);
+    }
+
+    async function recoverySnapshotDetails(snapshot) {
+      if (snapshot.payload) return snapshot;
+      if (!state.remoteReady) return null;
+      try {
+        const response = await fetch('/api/recovery?mode=detail&id=' + encodeURIComponent(snapshot.id), { cache: 'no-store' });
+        const result = await response.json().catch(function() { return {}; });
+        if (response.ok && result.ok && result.snapshot) return recoverySummary(result.snapshot);
+      } catch (error) {}
+      return null;
     }
 
     function mergeSettings(settings) {
@@ -1097,11 +1245,13 @@
       if (!state.email) return;
       state.remoteReady = false;
       state.remoteStatus = 'loading';
+      state.remoteConflict = false;
       render();
       try {
         const response = await fetch('/api/sync', { cache: 'no-store' });
         if (!response.ok) throw new Error('Cloud sync unavailable');
         const remote = await response.json();
+        state.remoteRevision = Number(remote.revision) || 0;
         const preserveClearedHourlyData = state.hourlyDataClearPending === true;
         let remoteIdentityMismatch = false;
         if (remote.found) {
@@ -1142,6 +1292,7 @@
         }
         state.remoteReady = true;
         state.remoteStatus = 'synced';
+        state.remoteConflict = false;
         saveProfile();
         if (!remoteIdentityMismatch && (state.hourlyDataClearPending || state.rows.length || state.manualEntries.length || state.reportedWeeks.length || state.contracts.length || state.smIdentity)) queueRemoteSave();
       } catch (error) {
@@ -1168,7 +1319,8 @@
             contracts: state.contracts,
             smIdentity: state.smIdentity || '',
             smIdentityHistory: normalizeSmIdentityHistory(state.smIdentityHistory),
-            lastSync: state.lastSync
+            lastSync: state.lastSync,
+            baseRevision: Number(state.remoteRevision) || 0
           })
         });
         if (!response.ok) {
@@ -1182,8 +1334,19 @@
             render();
             showToast('Cloud sync blocked: the Beta Tracker identity does not match this Time Tracker account.');
           }
+          if (response.status === 409 && failure && failure.code === 'SYNC_CONFLICT') {
+            state.remoteConflict = true;
+            state.remoteStatus = 'conflict';
+            render();
+            showToast('Cloud data changed in another tab. Refresh data before saving again.');
+            return;
+          }
           throw new Error((failure && failure.error) || 'Cloud sync unavailable');
         }
+        const savedResult = await response.json().catch(function() { return {}; });
+        state.remoteRevision = Number(savedResult.revision) || (Number(state.remoteRevision) || 0) + 1;
+        state.remoteConflict = false;
+        saveProfile();
         if (state.hourlyDataClearPending) {
           state.hourlyDataClearPending = false;
           saveProfile();
@@ -1219,6 +1382,8 @@
         state.contracts = normalizeContracts(saved.contracts || []);
         state.smIdentity = normalizeSmIdentity(saved.smIdentity || '');
         state.smIdentityHistory = mergeSmIdentityHistory(saved.smIdentityHistory, state.smIdentity);
+        state.remoteRevision = Number(saved.remoteRevision) || 0;
+        state.remoteConflict = false;
         state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
         state.lastSync = saved.lastSync || null;
         state.hourlyDataClearPending = saved.hourlyDataClearPending === true;
@@ -2461,9 +2626,14 @@
         return '<tr><td>' + formatDate(entry.date) + '</td><td>' + hours(entry.hours) + 'h</td><td>' + escapeHtml(manualBreakdown(entry)) + '</td><td><div class="row-badges">' + manualEntryBadges(entry) + '</div></td><td>' + (entry.note ? escapeHtml(entry.note) : '<span class="muted">—</span>') + '</td><td><button class="btn btn-quiet" type="button" data-manual-delete="' + escapeHtml(entry.id) + '">Remove</button></td></tr>';
       }).join('') : '<tr><td colspan="6"><div class="empty">No manual hours added yet.</div></td></tr>';
       root.querySelectorAll('[data-manual-delete]').forEach(function(button) {
-        button.addEventListener('click', function() {
+        button.addEventListener('click', async function() {
           const id = button.getAttribute('data-manual-delete');
           if (!window.confirm('Remove this manual hour entry?')) return;
+          const backup = await createRecoverySnapshot('Before removing manual hours');
+          if (!backup.ok) {
+            showToast('Manual hours were not removed because a safety backup could not be created.');
+            return;
+          }
           state.manualEntries = state.manualEntries.filter(function(entry) { return entry.id !== id; });
           saveProfile();
           queueRemoteSave();
@@ -2615,11 +2785,16 @@
       saveButton.disabled = editableWeeks === 0;
     }
 
-    function saveReportedValues() {
+    async function saveReportedValues() {
       const range = contractRange();
       const weeks = contractWeeks(range);
       if (!weeks.length) {
         showToast('Set an contract term before saving weekly values.');
+        return;
+      }
+      const backup = await createRecoverySnapshot('Before editing reported weekly values');
+      if (!backup.ok) {
+        showToast('Reported values were not changed because a safety backup could not be created.');
         return;
       }
       const reports = new Map();
@@ -2936,6 +3111,8 @@
             : 'The helper has not responded. Reload the extension, keep Beta Tracker open, then click Refresh data.');
       const remoteDetail = state.remoteStatus === 'synced'
         ? ' Cloud copy is available on other devices.'
+        : state.remoteStatus === 'conflict'
+          ? ' Cloud data changed in another tab. Refresh data before saving again.'
         : state.remoteStatus === 'local-only'
           ? ' Cloud copy is unavailable; this browser is using its saved copy.'
           : '';
@@ -3103,10 +3280,15 @@
       pendingHourlyImport.lastSync = next.lastSync || pendingHourlyImport.lastSync;
     }
 
-    function applyHourlyImport(payload) {
+    async function applyHourlyImport(payload) {
       const imported = normalizeRows(payload && payload.rows || []);
       if (!imported.length) return;
       if (payload && payload.replaceExisting === true) {
+        const backup = await createRecoverySnapshot('Before replacing Beta Tracker hourly data');
+        if (!backup.ok) {
+          showToast('Hourly data was not replaced because a safety backup could not be created.');
+          return;
+        }
         state.rows = imported;
         state.source = 'helper';
         state.lastSync = payload.lastSync || null;
@@ -3252,7 +3434,7 @@
           return;
         }
         if (!matchingRows.length) return;
-        applyHourlyImport(Object.assign({}, payload, { rows: matchingRows }));
+        await applyHourlyImport(Object.assign({}, payload, { rows: matchingRows }));
         return;
       }
       const sourceName = names[0] || '';
@@ -3262,7 +3444,7 @@
         openSmIdentityPrompt(sourceName);
         return;
       }
-      applyHourlyImport(payload);
+      await applyHourlyImport(payload);
     }
 
     function processPendingHourlyImport() {
@@ -3283,6 +3465,129 @@
     function closeModal() {
       document.getElementById('modalRoot').innerHTML = '';
       window.setTimeout(processPendingHourlyImport, 0);
+    }
+
+    function recoveryDateLabel(value) {
+      const date = new Date(value || '');
+      return Number.isFinite(date.getTime()) ? date.toLocaleString() : 'Unknown time';
+    }
+
+    function recoverySnapshotsMarkup(snapshots) {
+      if (!snapshots.length) return '<div class="empty">No recovery points yet. Time Tracker creates one automatically before a destructive data change.</div>';
+      return '<div class="recovery-list">' + snapshots.map(function(snapshot) {
+        const source = snapshot.source === 'cloud' ? 'Cloud' : 'This browser';
+        return '<div class="recovery-item"><div class="recovery-item-copy"><strong>' + escapeHtml(snapshot.reason) + '<span class="recovery-source">' + source + '</span></strong><span>' + escapeHtml(recoveryDateLabel(snapshot.createdAt)) + '</span><small>' + snapshot.rowCount + ' hourly rows · ' + snapshot.manualCount + ' manual entries</small></div><button class="btn btn-quiet" type="button" data-recovery-restore="' + escapeHtml(snapshot.id) + '">Restore hourly data</button></div>';
+      }).join('') + '</div>';
+    }
+
+    async function restoreHourlyFromSnapshot(snapshot) {
+      if (!snapshot) return false;
+      if (!window.confirm('Restore the hourly rows from ' + recoveryDateLabel(snapshot.createdAt) + '? This replaces the current hourly rows only. Manual hours, contracts, reports, and CB records will not be changed.')) return false;
+      const safety = await createRecoverySnapshot('Before restoring hourly data');
+      if (!safety.ok) {
+        showToast('Restore cancelled because a safety backup could not be created.');
+        return false;
+      }
+      const details = await recoverySnapshotDetails(snapshot);
+      if (!details || !details.payload) {
+        showToast('The recovery point could not be loaded.');
+        return false;
+      }
+
+      if (snapshot.source === 'cloud' && state.remoteReady) {
+        try {
+          const response = await fetch('/api/recovery', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'restoreHourly',
+              snapshotId: snapshot.id,
+              baseRevision: Number(state.remoteRevision) || 0
+            })
+          });
+          const result = await response.json().catch(function() { return {}; });
+          if (!response.ok || !result.ok) {
+            if (response.status === 409 && result.code === 'SYNC_CONFLICT') {
+              state.remoteConflict = true;
+              state.remoteStatus = 'conflict';
+              render();
+              showToast('Cloud data changed in another tab. Refresh data before restoring.');
+              return false;
+            }
+            throw new Error(result.error || 'The recovery point could not be restored.');
+          }
+          state.rows = normalizeRows(result.rows || []);
+          state.source = 'recovery';
+          state.lastSync = result.lastSync || null;
+          state.hourlyDataClearPending = false;
+          state.remoteRevision = Number(result.revision) || state.remoteRevision;
+          state.remoteConflict = false;
+          saveProfile();
+          render();
+          showToast('Hourly data restored safely.');
+          return true;
+        } catch (error) {
+          showToast(error.message || 'The recovery point could not be restored.');
+          return false;
+        }
+      }
+
+      state.rows = normalizeRows(details.payload.rows || []);
+      state.source = 'recovery';
+      state.lastSync = details.payload.lastSync || null;
+      state.hourlyDataClearPending = false;
+      saveProfile();
+      queueRemoteSave();
+      render();
+      showToast('Hourly data restored from the browser backup.');
+      return true;
+    }
+
+    async function openRecovery() {
+      const root = document.getElementById('modalRoot');
+      root.innerHTML =
+        '<div class="modal-backdrop" id="recoveryBackdrop"><div class="modal">' +
+          '<div class="modal-head"><div><div class="eyebrow">Data protection</div><h2>Data recovery</h2><p class="muted">Recovery points are created before hourly data is cleared, replaced, edited, or removed.</p></div><button class="close" id="closeRecovery" type="button">×</button></div>' +
+          '<div class="note"><span>●</span><div><strong>Hourly-only restore</strong><br>Restoring a point changes hourly rows only. Manual hours, contracts, reported values, and CB records are left unchanged. A new safety point is created before every restore.</div></div>' +
+          '<div id="recoveryMessage" class="field-help">Loading recovery points…</div>' +
+          '<div id="recoveryList"></div>' +
+          '<div class="modal-actions"><button type="button" class="btn" id="createRecoveryBackup">Create backup now</button><span class="modal-spacer"></span><button type="button" class="btn" id="closeRecoveryBottom">Close</button></div>' +
+        '</div></div>';
+      const close = function() { closeModal(); };
+      document.getElementById('closeRecovery').addEventListener('click', close);
+      document.getElementById('closeRecoveryBottom').addEventListener('click', close);
+      document.getElementById('recoveryBackdrop').addEventListener('click', function(event) {
+        if (event.target.id === 'recoveryBackdrop') close();
+      });
+
+      const listRoot = document.getElementById('recoveryList');
+      const messageRoot = document.getElementById('recoveryMessage');
+      const load = async function() {
+        const snapshots = await listRecoverySnapshots();
+        if (!isModalOpen()) return;
+        listRoot.innerHTML = recoverySnapshotsMarkup(snapshots);
+        listRoot.querySelectorAll('[data-recovery-restore]').forEach(function(button) {
+          button.addEventListener('click', async function() {
+            button.disabled = true;
+            const selected = snapshots.find(function(snapshot) { return snapshot.id === button.getAttribute('data-recovery-restore'); });
+            const restored = await restoreHourlyFromSnapshot(selected);
+            if (restored) closeModal();
+            else button.disabled = false;
+          });
+        });
+        messageRoot.textContent = snapshots.length
+          ? snapshots.length + ' recovery point' + (snapshots.length === 1 ? '' : 's') + ' available. The newest point is shown first.'
+          : 'No recovery points have been created yet.';
+      };
+      document.getElementById('createRecoveryBackup').addEventListener('click', async function() {
+        const button = this;
+        button.disabled = true;
+        const result = await createRecoverySnapshot('Manual backup');
+        button.disabled = false;
+        messageRoot.textContent = result.ok ? 'Backup created successfully.' : 'Backup could not be created.';
+        await load();
+      });
+      await load();
     }
 
     function openAccountSettings() {
@@ -3365,6 +3670,9 @@
             const oldProfile = localStorage.getItem(oldKey);
             if (oldProfile) localStorage.setItem(nextKey, oldProfile);
             localStorage.removeItem(oldKey);
+            const oldRecovery = localStorage.getItem(recoveryStorageKey(oldEmail));
+            if (oldRecovery) localStorage.setItem(recoveryStorageKey(nextEmail), oldRecovery);
+            localStorage.removeItem(recoveryStorageKey(oldEmail));
           }
           state.user = result.user;
           state.email = nextEmail;
@@ -3502,7 +3810,7 @@
       document.getElementById('closeNewContract').addEventListener('click', cancelNewContract);
       document.getElementById('cancelNewContract').addEventListener('click', cancelNewContract);
       document.getElementById('newContractBackdrop').addEventListener('click', function(event) { if (event.target.id === 'newContractBackdrop') cancelNewContract(); });
-      document.getElementById('newContractForm').addEventListener('submit', function(event) {
+      document.getElementById('newContractForm').addEventListener('submit', async function(event) {
         event.preventDefault();
         const errorRoot = document.getElementById('newContractError');
         const startValue = document.getElementById('newContractStart').value;
@@ -3549,6 +3857,12 @@
         }
         if (!state.remoteReady) {
           errorRoot.textContent = 'Wait until the cloud copy is available before starting a new contract, so the current data can be archived safely.';
+          errorRoot.hidden = false;
+          return;
+        }
+        const backup = await createRecoverySnapshot('Before starting a new contract');
+        if (!backup.ok) {
+          errorRoot.textContent = 'The current data could not be backed up, so the new contract was not started.';
           errorRoot.hidden = false;
           return;
         }
@@ -3682,6 +3996,11 @@
         let extensionRowsCleared = true;
         if (identityChanged) {
           if (!window.confirm('Changing or removing the linked Beta Tracker identity will clear only the extension’s saved Beta Tracker rows. Existing Time Tracker hourly data, manual hours, contract history, and CB records will not be changed. Continue?')) return;
+          const backup = await createRecoverySnapshot('Before changing the linked Beta Tracker identity');
+          if (!backup.ok) {
+            showToast('The identity was not changed because a safety backup could not be created.');
+            return;
+          }
           extensionRowsCleared = await clearExtensionSmRowsForIdentityChange();
         }
         state.smIdentityHistory = mergeSmIdentityHistory(state.smIdentityHistory, state.smIdentity, nextSmIdentity);
@@ -3764,6 +4083,8 @@
         state.contractPromptDismissedKey = '';
         state.smIdentity = '';
         state.smIdentityHistory = [];
+        state.remoteRevision = 0;
+        state.remoteConflict = false;
         saveProfile();
       }
       state.remoteReady = false;
@@ -3862,6 +4183,8 @@
       state.smIdentityWarning = null;
       state.remoteReady = false;
       state.remoteStatus = 'unknown';
+      state.remoteRevision = 0;
+      state.remoteConflict = false;
       helperRefreshPending = false;
       helperRefreshReplaceExisting = false;
       stopAutoRefresh();
@@ -3885,6 +4208,7 @@
     document.getElementById('hourlyDataTab').addEventListener('click', function() { setDashboardView('hourly'); });
     document.getElementById('reportsTab').addEventListener('click', function() { setDashboardView('reports'); });
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
+    document.getElementById('recoveryBtn').addEventListener('click', openRecovery);
     document.getElementById('manualAddBtn').addEventListener('click', openManualEntry);
     document.getElementById('manualAddTopBtn').addEventListener('click', openManualEntry);
     document.getElementById('saveReportedBtn').addEventListener('click', saveReportedValues);
@@ -3991,6 +4315,7 @@
 
     function refreshStaffMeData(showMessage, replaceExisting) {
       if (!state.email) return;
+      if (showMessage || state.remoteConflict) pullRemoteProfile();
       requestStaffMeRowsWhenReady(replaceExisting);
       // A data refresh must also force a new exchange-rate request.
       refreshExchangeRate(true);
@@ -4043,14 +4368,24 @@
       }
 
       if (event.data.type === 'SMTRACKER_CLEAR_DASHBOARD_DATA') {
-        state.rows = [];
-        state.source = 'waiting';
-        state.lastSync = null;
-        state.hourlyDataClearPending = true;
-        saveProfile();
-        render();
-        if (state.remoteReady) pushRemoteProfile();
-        showToast('Beta Tracker hourly data cleared.');
+        (async function() {
+          const backup = await createRecoverySnapshot('Before clearing Beta Tracker hourly data');
+          if (!backup.ok) {
+            showToast('Hourly data was not cleared because a safety backup could not be created.');
+            return;
+          }
+          state.rows = [];
+          state.source = 'waiting';
+          state.lastSync = null;
+          state.hourlyDataClearPending = true;
+          saveProfile();
+          render();
+          if (state.remoteReady) pushRemoteProfile();
+          showToast('Beta Tracker hourly data cleared. A recovery point is available.');
+        })().catch(function(error) {
+          console.error('SMTracker recovery backup failed.', error);
+          showToast('Hourly data was not cleared because the safety backup failed.');
+        });
         return;
       }
 
