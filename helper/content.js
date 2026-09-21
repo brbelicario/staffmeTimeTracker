@@ -1036,14 +1036,22 @@
           try {
             const root = findHourlyRoot();
             const rows = root ? readHourlyRows(root) : [];
-            const signature = root && rows.length
-              ? rows.map(rowKey).join("\n")
-              : "";
-            if (!root || !signature || (!force && signature === lastSignature)) {
-              // Keep the last successful signature while the table is briefly
-              // empty during a page redraw; do not replace stored rows with none.
+            if (!root) {
+              // Keep the last successful rows while the table is briefly
+              // absent during a page redraw.
               return;
             }
+            if (!rows.length) {
+              // Clear only the transient status. Stored identity buckets and
+              // hourly rows remain untouched until a real replacement request.
+              if (lastSignature !== "__empty__") {
+                lastSignature = "__empty__";
+                await storeRows([], true);
+              }
+              return;
+            }
+            const signature = rows.map(rowKey).join("\n");
+            if (!force && signature === lastSignature) return;
             lastSignature = signature;
             await storeRows(rows, true);
           } catch (error) {
@@ -1108,13 +1116,17 @@
             : {};
           const expectedIdentity = clean(event.data.expectedSmIdentity);
           const availableProfiles = profileEntries(profiles);
+          const hasStoredProfiles = availableProfiles.length > 0;
           const selection = selectProfile(profiles, expectedIdentity, clean(storedStatus.identityKey));
           const activeIdentity = clean(storedStatus.identity);
           // The selected profile is the source of truth. The global status
           // identity can be stale when more than one Beta Tracker tab is open,
           // so it must not turn an exact profile match into a false mismatch.
-          const identityMismatch = Boolean(expectedIdentity) && selection.state === "mismatch";
-          const identityAmbiguous = selection.state === "ambiguous";
+          // No saved profiles means that the current Hourly AHT table has not
+          // supplied rows yet. That is a waiting state, not an identity
+          // mismatch, even when the previous scan left a blocked status.
+          const identityMismatch = Boolean(expectedIdentity && hasStoredProfiles) && selection.state === "mismatch";
+          const identityAmbiguous = hasStoredProfiles && selection.state === "ambiguous";
           const realRows = hasConsent && !identityMismatch && !identityAmbiguous && selection.profile
             ? selection.profile.rows
             : [];
@@ -1123,10 +1135,21 @@
             ? stored[TEST_ROWS_KEY]
             : [];
           const rows = realRows.concat(testRows);
-          const observedForDashboard = availableProfiles.map((profile) => profile.identity);
+          const observedForDashboard = hasStoredProfiles
+            ? availableProfiles.map((profile) => profile.identity)
+            : [];
           const selectedIdentity = selection.profile ? selection.profile.identity : "";
           const observedIdentity = selectedIdentity ||
-            (observedForDashboard.length === 1 ? observedForDashboard[0] : activeIdentity);
+            (observedForDashboard.length === 1
+              ? observedForDashboard[0]
+              : ((identityMismatch || identityAmbiguous) ? activeIdentity : ""));
+          const identityState = identityMismatch
+            ? "mismatch"
+            : identityAmbiguous
+              ? "ambiguous"
+              : hasStoredProfiles
+                ? (selection.state === "identified" || selection.state === "matched" ? "identified" : (storedStatus.identityState || "none"))
+                : "none";
           const responseStatus = hasConsent
             ? {
                 ...storedStatus,
@@ -1139,6 +1162,11 @@
                 identityMatched: !identityMismatch && !identityAmbiguous && Boolean(selection.profile || !expectedIdentity),
                 identityMismatch,
                 identityAmbiguous,
+                identityState,
+                identity: observedIdentity,
+                identityKey: observedIdentity ? identityKey(observedIdentity) : "",
+                blocked: identityMismatch || identityAmbiguous,
+                blockedReason: identityMismatch ? "mismatch" : identityAmbiguous ? "multiple-identities" : "",
                 identitySelection: selection.matchType || selection.state,
                 selectedIdentity,
                 availableIdentities: observedForDashboard
