@@ -867,11 +867,11 @@
   <script>
     const BETA_TRACKER_URL = 'https://script.google.com/macros/s/AKfycbz-ZTA3IBu5Kmz7Fh7UIIVf9YB6W8qCjJllACUsl_mIh6WIsD8wgkATuP-c6Ust0-dQ/exec';
     const DEFAULT_SETTINGS = {
-      start: '22:00',
-      end: '07:00',
+      start: '',
+      end: '',
       contractStart: '',
       contractEnd: '',
-      adherenceDays: [0, 1],
+      adherenceDays: [],
       targets: { work: 45, coverage: 40, weekend: 16 },
       caps: { daily: 12, weekly: 75 },
       pay: {
@@ -1135,6 +1135,13 @@
       merged.adherenceDays = Array.isArray(merged.adherenceDays) && merged.adherenceDays.length
         ? merged.adherenceDays.map(Number).filter(function(day) { return day >= 0 && day <= 6; })
         : DEFAULT_SETTINGS.adherenceDays.slice();
+      const contractStart = parseDate(merged.contractStart);
+      const contractEnd = parseDate(merged.contractEnd);
+      if (!contractStart || !contractEnd || contractStart > contractEnd) {
+        merged.start = '';
+        merged.end = '';
+        merged.adherenceDays = [];
+      }
       return merged;
     }
 
@@ -2468,7 +2475,8 @@
       const start = parseMinutes(state.settings.start);
       const end = parseMinutes(state.settings.end);
       const time = parseMinutes(row.time);
-      if (start === null || end === null || time === null) return true;
+      if (start === null || end === null) return false;
+      if (time === null) return true;
       // Hourly row timestamps represent the beginning of each hour, so the
       // duty end belongs to the next outside-duty hour.
       if (end < start) return time >= start || time < end;
@@ -3260,12 +3268,14 @@
       renderCapMonitor(range);
 
       const identityLabel = state.smIdentity || 'Not linked yet';
+      const dutyWindowSet = Boolean(parseMinutes(state.settings.start) !== null && parseMinutes(state.settings.end) !== null);
+      const adherenceSet = Array.isArray(state.settings.adherenceDays) && state.settings.adherenceDays.length > 0;
       document.getElementById('setupList').innerHTML =
         '<div class="setup-item"><span>Contract dates</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
         '<div class="setup-item"><span>Linked Time Tracker identity</span><strong title="' + escapeHtml(identityLabel) + '">' + escapeHtml(identityLabel) + '</strong></div>' +
-        '<div class="setup-item"><span>Duty window</span><strong>' + state.settings.start + ' – ' + state.settings.end + '</strong></div>' +
-        '<div class="setup-item"><span>Weekend adherence</span><strong>' + state.settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
-        '<div class="setup-item"><span>Coverage days</span><strong>' + [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') + '</strong></div>' +
+        '<div class="setup-item"><span>Duty window</span><strong>' + (dutyWindowSet ? state.settings.start + ' – ' + state.settings.end : 'Not set') + '</strong></div>' +
+        '<div class="setup-item"><span>Weekend adherence</span><strong>' + (adherenceSet ? state.settings.adherenceDays.map(dayName).join(', ') : 'Not set') + '</strong></div>' +
+        '<div class="setup-item"><span>Coverage days</span><strong>' + (adherenceSet ? [0,1,2,3,4,5,6].filter(function(day) { return state.settings.adherenceDays.indexOf(day) < 0; }).map(dayName).join(', ') : 'Not set') + '</strong></div>' +
         '<div class="setup-item"><span>Daily cap reminder</span><strong>' + hours(state.settings.caps.daily) + 'h</strong></div>' +
         '<div class="setup-item"><span>Contract weekly cap</span><strong>' + hours(state.settings.caps.weekly) + 'h</strong></div>' +
         '<div class="setup-item"><span>Manual entries</span><strong>' + state.manualEntries.length + '</strong></div>' +
@@ -3286,6 +3296,7 @@
 
        renderContractStatus(range);
        scheduleContractEndPrompt(range);
+       window.setTimeout(maybePromptForInitialSetup, 0);
     }
 
     function showToast(message) {
@@ -3579,13 +3590,16 @@
 
     function maybePromptForInitialSetup() {
       if (!state.email || initialSetupPromptShownKey === state.email || hasValidContract() || isModalOpen() || state.remoteStatus === 'loading') return;
-      initialSetupPromptShownKey = state.email;
       openInitialSetup();
+      if (isModalOpen()) initialSetupPromptShownKey = state.email;
     }
 
     function closeModal() {
       document.getElementById('modalRoot').innerHTML = '';
-      window.setTimeout(processPendingHourlyImport, 0);
+      window.setTimeout(function() {
+        processPendingHourlyImport();
+        maybePromptForInitialSetup();
+      }, 0);
     }
 
     function recoveryDateLabel(value) {
@@ -4143,6 +4157,8 @@
           exchangeRateUpdatedAt: exchangeRateMode === 'automatic' ? (pay.exchangeRateUpdatedAt || '') : '',
           exchangeRateSource: exchangeRateMode === 'automatic' ? (pay.exchangeRateSource || '') : ''
         };
+        state.settings = mergeSettings(state.settings);
+        if (!hasValidContract()) initialSetupPromptShownKey = '';
         saveProfile();
         queueRemoteSave();
         closeModal();
