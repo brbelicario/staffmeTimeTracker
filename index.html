@@ -3086,11 +3086,15 @@
       const hasRows = state.rows.length > 0;
       const tableFound = Boolean(state.helperStatus && state.helperStatus.tableFound);
       const parsedRows = state.helperStatus ? Number(state.helperStatus.parsedRows || 0) : 0;
-      const helperIdentityNames = state.helperStatus
-        ? (Array.isArray(state.helperStatus.availableIdentities) && state.helperStatus.availableIdentities.length
-          ? state.helperStatus.availableIdentities
-          : [state.helperStatus.selectedIdentity || state.helperStatus.observedSmIdentity || state.helperStatus.identity || ''])
+      const selectedHelperIdentity = normalizeSmIdentity(state.helperStatus && state.helperStatus.selectedIdentity);
+      const availableHelperIdentities = state.helperStatus && Array.isArray(state.helperStatus.availableIdentities)
+        ? state.helperStatus.availableIdentities.filter(Boolean)
         : [];
+      const helperIdentityNames = selectedHelperIdentity
+        ? [selectedHelperIdentity]
+        : availableHelperIdentities.length
+          ? availableHelperIdentities
+          : [state.helperStatus && (state.helperStatus.observedSmIdentity || state.helperStatus.identity) || ''];
       const exactIdentityMatch = Boolean(state.smIdentity) && helperIdentityNames.filter(Boolean).length > 0 &&
         helperIdentityNames.filter(Boolean).every(function(name) {
           return smIdentitiesExactlyMatch(name, state.smIdentity);
@@ -3392,9 +3396,12 @@
       if (state.smIdentity && (!data || smIdentityKey(data.expectedSmIdentity) !== smIdentityKey(state.smIdentity))) {
         return;
       }
-      const incomingNames = data && Array.isArray(data.observedIdentities) && data.observedIdentities.length
-        ? data.observedIdentities.filter(Boolean)
-        : [data && (data.selectedIdentity || data.observedSmIdentity) || ''].filter(Boolean);
+      const selectedIncomingIdentity = normalizeSmIdentity(data && data.selectedIdentity);
+      const incomingNames = selectedIncomingIdentity
+        ? [selectedIncomingIdentity]
+        : data && Array.isArray(data.observedIdentities) && data.observedIdentities.length
+          ? data.observedIdentities.filter(Boolean)
+          : [data && data.observedSmIdentity || ''].filter(Boolean);
       const exactIncomingMatch = Boolean(state.smIdentity && incomingNames.length) && incomingNames.every(function(name) {
         return smIdentitiesExactlyMatch(name, state.smIdentity);
       });
