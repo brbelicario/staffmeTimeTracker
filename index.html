@@ -2837,6 +2837,21 @@
         showToast('Set an contract term before saving weekly values.');
         return;
       }
+      // Capture the live DOM values before creating the asynchronous safety
+      // snapshot. The backup request can briefly yield to a refresh/redraw,
+      // which would otherwise replace a still-focused final input before its
+      // value is read.
+      const draftValues = new Map();
+      weeks.forEach(function(week) {
+        if (reportWeekLocked(week)) return;
+        const key = isoDate(week.start);
+        const values = {};
+        ['work', 'coverage', 'adherence'].forEach(function(fieldName) {
+          const input = document.querySelector('[data-report-start="' + key + '"][data-report-field="' + fieldName + '"]');
+          values[fieldName] = input ? optionalNumber(input.value) : null;
+        });
+        draftValues.set(key, values);
+      });
       const backup = await createRecoverySnapshot('Before editing reported weekly values');
       if (!backup.ok) {
         showToast('Reported values were not changed because a safety backup could not be created.');
@@ -2847,11 +2862,7 @@
       weeks.forEach(function(week) {
         if (reportWeekLocked(week)) return;
         const key = isoDate(week.start);
-        const values = {};
-        ['work', 'coverage', 'adherence'].forEach(function(fieldName) {
-          const input = document.querySelector('[data-report-start="' + key + '"][data-report-field="' + fieldName + '"]');
-          values[fieldName] = input ? optionalNumber(input.value) : null;
-        });
+        const values = draftValues.get(key) || { work: null, coverage: null, adherence: null };
         if (values.work === null && values.coverage === null && values.adherence === null) {
           reports.delete(key);
         } else {
