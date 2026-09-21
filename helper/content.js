@@ -1169,7 +1169,10 @@
                 blockedReason: identityMismatch ? "mismatch" : identityAmbiguous ? "multiple-identities" : "",
                 identitySelection: selection.matchType || selection.state,
                 selectedIdentity,
-                availableIdentities: observedForDashboard
+                availableIdentities: observedForDashboard,
+                source: "smtracker-extension",
+                identityVerified: Boolean(expectedIdentity && selection.profile && !identityMismatch && !identityAmbiguous),
+                verifiedIdentity: selectedIdentity
               }
             : {
                 installed: true,
@@ -1181,7 +1184,10 @@
                 identityMatched: false,
                 identityMismatch: false,
                 identityAmbiguous: false,
-                availableIdentities: []
+                availableIdentities: [],
+                source: "smtracker-extension",
+                identityVerified: false,
+                verifiedIdentity: ""
               };
 
           await safeStorageSet({ [STATUS_KEY]: responseStatus });
@@ -1198,6 +1204,9 @@
             expectedSmIdentity: expectedIdentity,
             observedSmIdentity: observedIdentity,
             observedIdentities: responseStatus.availableIdentities,
+            source: "smtracker-extension",
+            identityVerified: responseStatus.identityVerified === true,
+            verifiedIdentity: responseStatus.verifiedIdentity || "",
             helperStatus: responseStatus
           }, "*");
         } catch (error) {

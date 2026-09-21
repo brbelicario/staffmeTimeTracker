@@ -2,7 +2,7 @@
 
 Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance task timer.
 
-The v0.5.19 runtime gives an exact normalized Beta Tracker worker name priority when more than one saved identity profile can fuzzy-match the linked name. It also treats an empty/loading Hourly AHT table as a waiting state instead of reusing an old identity-blocked status. This prevents false identity blocks while still blocking genuinely ambiguous or different workers.
+The v0.5.20 runtime makes the extension's identity selection authoritative for dashboard imports. It sends rows only with an explicit verified Beta Tracker identity, while the dashboard no longer performs a second identity-review gate. Older rows that cannot be verified are preserved in the Time Tracker recovery history before they are excluded from cloud sync. It also gives an exact normalized Beta Tracker worker name priority when more than one saved identity profile can fuzzy-match the linked name, and treats an empty/loading Hourly AHT table as a waiting state instead of reusing an old identity-blocked status.
 
 ## What it does
 
@@ -11,9 +11,9 @@ The v0.5.19 runtime gives an exact normalized Beta Tracker worker name priority 
 - Reads the visible StaffMe Beta Tracker “Hourly AHT (Last 5 Days)” table after you approve the on-page data-access notice.
 - Supports the framed preview page, including random Google-hosted frame subdomains, and standard HTML table/row layouts.
 - Stores normalized hourly rows in separate local buckets for each detected Beta Tracker identity.
-- Makes only the identity-matching bucket available when the SMTracker dashboard requests a refresh.
+- Makes only the identity-matching bucket available when the SMTracker dashboard requests a refresh and marks that selection as explicitly verified.
 - Shows the detected StaffMe Beta Tracker identity and blocks rows when a table has no Agent name or contains multiple identities.
-- The dashboard asks new accounts to set contract dates and can link the visible Beta Tracker identity, so rows from multiple Beta Tracker accounts in one browser cannot be mixed into the wrong Time Tracker account.
+- The dashboard asks new accounts to set contract dates and can link the visible Beta Tracker identity, so rows from multiple Beta Tracker accounts in one browser cannot be mixed into the wrong Time Tracker account. The extension is the identity gate; the dashboard does not ask for a second identity review.
 - Changing or removing the linked Beta Tracker identity clears only the extension's saved Beta Tracker cache; existing Time Tracker hourly rows and other account data remain unchanged. Explicitly linked identities are retained so preserved historical rows can continue syncing safely.
 - Notifies the Time Tracker dashboard as soon as usable Beta Tracker data is detected, so first-time identity linking does not require a manual dashboard refresh.
 - Shows local connection, setup, and identity status.

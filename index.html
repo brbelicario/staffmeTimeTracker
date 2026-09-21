@@ -904,7 +904,6 @@
       user: null,
       smIdentity: '',
       smIdentityHistory: [],
-      smIdentityWarning: null,
       exchangeRateStatus: 'idle',
       exchangeRateError: '',
       contractPromptDismissedKey: ''
@@ -925,7 +924,6 @@
     let pendingHourlyImport = null;
     let helperRefreshPending = false;
     let helperRefreshReplaceExisting = false;
-    let identityWarningShownKey = '';
     let identityPromptDismissedKey = '';
     let dashboardView = 'active';
     let hourlySelectedWeek = 1;
@@ -995,10 +993,10 @@
       return 'staffme-recovery:' + String(email || '').trim().toLowerCase();
     }
 
-    function recoveryPayload() {
+    function recoveryPayload(rowsOverride) {
       return {
         settings: mergeSettings(state.settings),
-        rows: normalizeRows(state.rows),
+        rows: normalizeRows(Array.isArray(rowsOverride) ? rowsOverride : state.rows),
         manualEntries: normalizeManualEntries(state.manualEntries),
         reportedWeeks: normalizeReportedWeeks(state.reportedWeeks),
         contracts: normalizeContracts(state.contracts),
@@ -1041,9 +1039,10 @@
       }
     }
 
-    async function createRecoverySnapshot(reason) {
+    async function createRecoverySnapshot(reason, rowsOverride, options) {
       if (!state.email) return { ok: false, error: 'No signed-in account.' };
-      const payload = recoveryPayload();
+      const payload = recoveryPayload(rowsOverride);
+      const forceCloud = Boolean(options && options.forceCloud);
       const localSnapshot = {
         id: 'local-' + makeId('recovery'),
         source: 'local',
@@ -1056,7 +1055,7 @@
       };
       const localSaved = writeLocalRecoverySnapshot(localSnapshot);
       let cloudSnapshot = null;
-      if (state.remoteReady) {
+      if (state.remoteReady || forceCloud) {
         try {
           const response = await fetch('/api/recovery', {
             method: 'POST',
@@ -1155,12 +1154,6 @@
         .trim();
     }
 
-    function smIdentitiesExactlyMatch(first, second) {
-      const firstKey = smIdentityKey(first);
-      const secondKey = smIdentityKey(second);
-      return Boolean(firstKey && secondKey && firstKey === secondKey);
-    }
-
     function normalizeSmIdentityHistory(values) {
       const seen = new Set();
       const result = [];
@@ -1242,15 +1235,39 @@
       return Boolean(range && !range.invalid);
     }
 
-    function resetIdentityWarning() {
-      identityWarningShownKey = '';
-      identityPromptDismissedKey = '';
+    function splitRowsForLinkedIdentity(rows) {
+      const accepted = [];
+      const quarantined = [];
+      const knownIdentities = normalizeSmIdentityHistory(
+        (Array.isArray(state.smIdentityHistory) ? state.smIdentityHistory : []).concat(state.smIdentity || '')
+      );
+      (Array.isArray(rows) ? rows : []).forEach(function(row) {
+        const acceptedByIdentity = isSyntheticSmRow(row) || knownIdentities.some(function(identity) {
+          return smIdentitiesMatch(row && row.agent, identity);
+        });
+        (acceptedByIdentity ? accepted : quarantined).push(row);
+      });
+      return { accepted: accepted, quarantined: quarantined };
     }
 
-    function clearStaleIdentityWarning() {
-      if (!state.smIdentityWarning) return;
-      state.smIdentityWarning = null;
-      identityWarningShownKey = '';
+    async function prepareRowsForCloudSync() {
+      if (!state.smIdentity || !Array.isArray(state.rows) || !state.rows.length) {
+        return { ok: true, quarantinedCount: 0 };
+      }
+      const split = splitRowsForLinkedIdentity(state.rows);
+      if (!split.quarantined.length) return { ok: true, quarantinedCount: 0 };
+
+      const backup = await createRecoverySnapshot('Before automatic Beta Tracker identity cleanup');
+      if (!backup.ok) {
+        showToast('Cloud sync paused because a recovery backup could not be created. No hourly rows were changed.');
+        return { ok: false, quarantinedCount: 0 };
+      }
+
+      state.rows = dedupeRows(split.accepted);
+      if (!state.rows.length) state.source = 'waiting';
+      saveProfile();
+      render();
+      return { ok: true, quarantinedCount: split.quarantined.length };
     }
 
     async function pullRemoteProfile() {
@@ -1265,7 +1282,8 @@
         const remote = await response.json();
         state.remoteRevision = Number(remote.revision) || 0;
         const preserveClearedHourlyData = state.hourlyDataClearPending === true;
-        let remoteIdentityMismatch = false;
+        let remoteCleanupBlocked = false;
+        let automaticCleanupCount = 0;
         if (remote.found) {
           state.smIdentityHistory = mergeSmIdentityHistory(
             state.smIdentityHistory,
@@ -1277,20 +1295,26 @@
           }
           if (!preserveClearedHourlyData) {
             const remoteRows = normalizeRows(remote.rows || []);
-            const remoteNames = sourceSmIdentityNames(remoteRows);
-            const remoteMatchingRows = state.smIdentityHistory.length
-              ? rowsForSmIdentities(remoteRows, state.smIdentityHistory)
-              : remoteRows;
-            const hasUnexpectedRemoteIdentity = remoteNames.some(function(name) {
-              return !state.smIdentityHistory.some(function(identity) {
-                return smIdentitiesMatch(name, identity);
-              });
-            });
-            if (state.smIdentity && remoteNames.length && hasUnexpectedRemoteIdentity) {
-              state.smIdentityWarning = { expected: state.smIdentity, observed: remoteNames.join(', ') };
-              remoteIdentityMismatch = true;
+            if (state.smIdentity) {
+              const combinedRows = dedupeRows(state.rows.concat(remoteRows));
+              const split = splitRowsForLinkedIdentity(combinedRows);
+              if (split.quarantined.length) {
+                const backup = await createRecoverySnapshot(
+                  'Before automatic Beta Tracker identity cleanup',
+                  combinedRows,
+                  { forceCloud: true }
+                );
+                if (!backup.ok) {
+                  remoteCleanupBlocked = true;
+                } else {
+                  state.rows = dedupeRows(split.accepted);
+                  automaticCleanupCount = split.quarantined.length;
+                }
+              } else {
+                state.rows = combinedRows;
+              }
             } else {
-              state.rows = dedupeRows(state.rows.concat(remoteMatchingRows));
+              state.rows = dedupeRows(state.rows.concat(remoteRows));
             }
           }
           state.manualEntries = mergeManualEntries(state.manualEntries, normalizeManualEntries(remote.manualEntries || []));
@@ -1303,10 +1327,10 @@
           if (!preserveClearedHourlyData && state.rows.length && state.source === 'waiting') state.source = 'remote';
         }
         state.remoteReady = true;
-        state.remoteStatus = 'synced';
+        state.remoteStatus = remoteCleanupBlocked ? 'local-only' : 'synced';
         state.remoteConflict = false;
         saveProfile();
-        if (!remoteIdentityMismatch && (state.hourlyDataClearPending || state.rows.length || state.manualEntries.length || state.reportedWeeks.length || state.contracts.length || state.smIdentity)) queueRemoteSave();
+        if (!remoteCleanupBlocked && (state.hourlyDataClearPending || state.rows.length || state.manualEntries.length || state.reportedWeeks.length || state.contracts.length || state.smIdentity)) queueRemoteSave();
       } catch (error) {
         state.remoteReady = false;
         state.remoteStatus = 'local-only';
@@ -1314,11 +1338,18 @@
       flushPendingHelperRefresh();
       startExchangeRateRefresh();
       render();
+      if (remoteCleanupBlocked) {
+        showToast('Automatic identity cleanup paused because a recovery backup could not be created. No hourly rows were changed.');
+      } else if (automaticCleanupCount) {
+        showToast(automaticCleanupCount + ' older unverified Beta Tracker row' + (automaticCleanupCount === 1 ? '' : 's') + ' was preserved in Data recovery.');
+      }
       window.setTimeout(maybePromptForInitialSetup, 0);
     }
 
     async function pushRemoteProfile() {
       if (!state.email || !state.remoteReady) return;
+      const prepared = await prepareRowsForCloudSync();
+      if (!prepared.ok) return;
       try {
         const response = await fetch('/api/sync', {
           method: 'POST',
@@ -1339,12 +1370,11 @@
           let failure = null;
           try { failure = await response.json(); } catch (error) {}
           if (response.status === 409 && failure && failure.code === 'SM_IDENTITY_MISMATCH') {
-            const observed = Array.isArray(failure.observedIdentities) && failure.observedIdentities.length
-              ? failure.observedIdentities.join(', ')
-              : 'a different Beta Tracker worker';
-            state.smIdentityWarning = { expected: state.smIdentity || 'Linked Time Tracker identity', observed: observed };
+            console.warn('[SMTracker] Cloud sync rejected rows after local identity cleanup.', failure);
+            state.remoteStatus = 'local-only';
             render();
-            showToast('Cloud sync blocked: the Beta Tracker identity does not match this Time Tracker account.');
+            showToast('Cloud sync could not save the verified Beta Tracker rows yet. Refresh Beta Tracker data and try again.');
+            return;
           }
           if (response.status === 409 && failure && failure.code === 'SYNC_CONFLICT') {
             state.remoteConflict = true;
@@ -1365,6 +1395,9 @@
         }
         state.remoteStatus = 'synced';
         render();
+        if (prepared.quarantinedCount) {
+          showToast(prepared.quarantinedCount + ' older Beta Tracker row' + (prepared.quarantinedCount === 1 ? '' : 's') + ' was preserved in Data recovery; verified rows were synced.');
+        }
       } catch (error) {
         state.remoteStatus = 'local-only';
         render();
@@ -3101,25 +3134,24 @@
         : availableHelperIdentities.length
           ? availableHelperIdentities
           : [state.helperStatus && (state.helperStatus.observedSmIdentity || state.helperStatus.identity) || ''];
-      const exactIdentityMatch = Boolean(state.smIdentity) && helperIdentityNames.filter(Boolean).length > 0 &&
-        helperIdentityNames.filter(Boolean).every(function(name) {
-          return smIdentitiesExactlyMatch(name, state.smIdentity);
+      const equivalentIdentityMatch = Boolean(state.smIdentity) && helperIdentityNames.filter(Boolean).length > 0 &&
+        helperIdentityNames.filter(Boolean).some(function(name) {
+          return smIdentitiesMatch(name, state.smIdentity);
         });
-      if (exactIdentityMatch) clearStaleIdentityWarning();
-      const identityMismatch = Boolean(state.helperStatus && state.helperStatus.identityMismatch) && !exactIdentityMatch;
+      const identityMismatch = Boolean(state.helperStatus && state.helperStatus.identityMismatch) && !equivalentIdentityMatch;
       const detectedIdentity = normalizeSmIdentity(state.helperStatus && (state.helperStatus.observedSmIdentity || state.helperStatus.identity));
       const identityDetail = identityMismatch
-        ? 'StaffMe Beta Tracker identity: ' + (detectedIdentity || 'a different worker') + ' does not match the Time Tracker identity: ' + (state.smIdentity || 'another worker') + '. No new data from Beta Tracker were imported.'
+        ? 'The SMTracker extension did not verify the current Beta Tracker identity (' + (detectedIdentity || 'a different worker') + '). No rows were imported.'
         : detectedIdentity
           ? 'Detected StaffMe Beta Tracker identity: ' + detectedIdentity + '.'
           : '';
       const sourceLabel = identityMismatch
-        ? 'IDENTITY BLOCKED'
+        ? 'VERIFICATION BLOCKED'
         : state.source === 'helper'
         ? 'BETA TRACKER DATA'
         : (hasRows ? 'STORED BETA TRACKER' : (state.helperStatus ? 'HELPER READY' : 'WAITING'));
       document.getElementById('syncTitle').textContent = identityMismatch
-        ? 'Time Tracker and Beta Tracker mismatch — rows blocked'
+        ? 'Beta Tracker identity not verified — rows blocked'
         : hasRows
         ? 'Beta Tracker hourly data is loaded'
         : (tableFound && parsedRows === 0
@@ -3216,9 +3248,7 @@
       renderManualEntries();
       renderCapMonitor(range);
 
-      const identityLabel = state.smIdentityWarning
-        ? 'Mismatch — review required'
-        : (state.smIdentity || 'Not linked yet');
+      const identityLabel = state.smIdentity || 'Not linked yet';
       document.getElementById('setupList').innerHTML =
         '<div class="setup-item"><span>Contract dates</span><strong>' + (termIsValid ? formatDate(range.start) + ' – ' + formatDate(range.end) : 'Not set') + '</strong></div>' +
         '<div class="setup-item"><span>Linked Time Tracker identity</span><strong title="' + escapeHtml(identityLabel) + '">' + escapeHtml(identityLabel) + '</strong></div>' +
@@ -3358,41 +3388,10 @@
       document.getElementById('linkSmIdentity').addEventListener('click', function() {
         state.smIdentity = name;
         state.smIdentityHistory = mergeSmIdentityHistory(state.smIdentityHistory, name);
-        state.smIdentityWarning = null;
-        resetIdentityWarning();
         saveProfile();
         queueRemoteSave();
         closeModal();
         showToast('Beta Tracker identity linked.');
-      });
-    }
-
-    function openSmIdentityMismatch(sourceNames) {
-      const names = (Array.isArray(sourceNames) ? sourceNames : []).map(normalizeSmIdentity).filter(Boolean);
-      const observed = names.length ? names.join(', ') : 'more than one Beta Tracker worker name';
-      const expected = normalizeSmIdentity(state.smIdentity) || 'No Time Tracker identity is linked to this account';
-      const key = [smIdentityKey(expected), names.map(smIdentityKey).join('|')].join('::');
-      state.smIdentityWarning = { expected: expected, observed: observed };
-      render();
-      if (identityWarningShownKey === key || isModalOpen()) return;
-      identityWarningShownKey = key;
-      const root = document.getElementById('modalRoot');
-      root.innerHTML =
-        '<div class="modal-backdrop" id="smIdentityMismatchBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">Identity check</div><h2>Time Tracker and Beta Tracker Mismatch</h2><p class="muted">No new data from Beta Tracker were imported.</p></div><button class="close" id="closeSmIdentityMismatch" type="button">×</button></div>' +
-          '<div class="auth-error" style="display:block"><strong>Time Tracker identity:</strong> ' + escapeHtml(expected) + '<br><strong>StaffMe Beta Tracker identity:</strong> ' + escapeHtml(observed) + '</div>' +
-          '<p class="field-help">Check that the correct <a href="' + BETA_TRACKER_URL + '" target="_blank" rel="noopener noreferrer">Beta Tracker</a> and Time Tracker accounts are open. To intentionally change the linked worker, open Tracker Settings. Existing Beta Tracker rows are unchanged.</p>' +
-          '<div class="modal-actions"><button type="button" class="btn" id="closeSmIdentityMismatchBottom">Close</button><button type="button" class="btn btn-primary" id="openSmIdentitySettings">Open Tracker Settings</button></div>' +
-        '</div></div>';
-      const close = function() { closeModal(); };
-      document.getElementById('closeSmIdentityMismatch').addEventListener('click', close);
-      document.getElementById('closeSmIdentityMismatchBottom').addEventListener('click', close);
-      document.getElementById('smIdentityMismatchBackdrop').addEventListener('click', function(event) {
-        if (event.target.id === 'smIdentityMismatchBackdrop') close();
-      });
-      document.getElementById('openSmIdentitySettings').addEventListener('click', function() {
-        closeModal();
-        openSettings();
       });
     }
 
@@ -3403,37 +3402,27 @@
       if (state.smIdentity && (!data || smIdentityKey(data.expectedSmIdentity) !== smIdentityKey(state.smIdentity))) {
         return;
       }
-      const selectedIncomingIdentity = normalizeSmIdentity(data && data.selectedIdentity);
-      const incomingNames = selectedIncomingIdentity
-        ? [selectedIncomingIdentity]
-        : data && Array.isArray(data.observedIdentities) && data.observedIdentities.length
-          ? data.observedIdentities.filter(Boolean)
-          : [data && data.observedSmIdentity || ''].filter(Boolean);
-      const exactIncomingMatch = Boolean(state.smIdentity && incomingNames.length) && incomingNames.every(function(name) {
-        return smIdentitiesExactlyMatch(name, state.smIdentity);
-      });
-      if (exactIncomingMatch) clearStaleIdentityWarning();
-      const effectiveData = data && exactIncomingMatch && (data.identityMismatch === true || data.identityAmbiguous === true)
-        ? Object.assign({}, data, {
-            identityMismatch: false,
-            identityAmbiguous: false,
-            helperStatus: Object.assign({}, data.helperStatus || {}, {
-              identityMismatch: false,
-              identityAmbiguous: false,
-              identityMatched: true,
-              identityState: 'identified',
-              blocked: false,
-              blockedReason: ''
-            })
-          })
-        : data;
+      const verifiedIdentity = normalizeSmIdentity(data && (data.verifiedIdentity || data.selectedIdentity));
+      const extensionIdentityVerified = Boolean(
+        state.smIdentity &&
+        data &&
+        data.source === 'smtracker-extension' &&
+        data.identityVerified === true &&
+        verifiedIdentity &&
+        smIdentitiesMatch(verifiedIdentity, state.smIdentity)
+      );
+      // The extension is the identity gate. A dashboard never imports rows
+      // for a linked account unless the extension explicitly selected and
+      // verified that same Beta Tracker identity.
+      if (state.smIdentity && !extensionIdentityVerified) {
+        render();
+        return;
+      }
+      const effectiveData = data;
       state.helperStatus = effectiveData && effectiveData.helperStatus || state.helperStatus;
       if (effectiveData && (effectiveData.identityMismatch === true || effectiveData.identityAmbiguous === true)) {
-        const observed = incomingNames.length
-          ? incomingNames
-          : ['More than one Beta Tracker worker identity'];
-        openSmIdentityMismatch(observed);
         render();
+        showToast('The extension did not verify the Beta Tracker identity, so no new rows were imported.');
         return;
       }
       const imported = normalizeRows(effectiveData && effectiveData.rows || []);
@@ -3468,23 +3457,15 @@
         return;
       }
       const names = sourceSmIdentityNames(payload.rows);
-      const exactImportedIdentityMatch = Boolean(state.smIdentity && names.length) && names.every(function(name) {
-        return smIdentitiesExactlyMatch(name, state.smIdentity);
-      });
-      if (exactImportedIdentityMatch) clearStaleIdentityWarning();
       if (!state.smIdentity && names.length > 1) {
-        openSmIdentityMismatch(names);
         return;
       }
       if (hasUnidentifiedSmRows(payload.rows)) {
-        const observed = names.length ? names.concat(['Some rows have no worker name']) : ['No worker name found in the incoming Beta Tracker data'];
-        openSmIdentityMismatch(observed);
         return;
       }
       if (state.smIdentity) {
         const matchingRows = rowsForSmIdentity(payload.rows, state.smIdentity);
         if (names.length && !matchingRows.some(function(row) { return !isSyntheticSmRow(row); })) {
-          openSmIdentityMismatch(names);
           return;
         }
         if (!matchingRows.length) return;
@@ -3780,17 +3761,6 @@
         });
         return;
       }
-      if (state.smIdentityWarning) {
-        root.className = 'contract-notice identity-warning';
-        root.hidden = false;
-        root.innerHTML =
-          '<div class="contract-notice-copy"><strong>Time Tracker and Beta Tracker Mismatch</strong><span>Time Tracker expects ' + escapeHtml(state.smIdentityWarning.expected) + ', but StaffMe Beta Tracker shows ' + escapeHtml(state.smIdentityWarning.observed) + '. No new data from Beta Tracker were imported.</span></div>' +
-          '<button class="btn" type="button" id="contractNoticeBtn">Review identity</button>';
-        document.getElementById('contractNoticeBtn').addEventListener('click', function() {
-          openSettings();
-        });
-        return;
-      }
       if (!contractHasEnded(range)) {
         root.className = 'contract-notice';
         root.hidden = true;
@@ -4059,8 +4029,6 @@
         }
         state.smIdentityHistory = mergeSmIdentityHistory(state.smIdentityHistory, state.smIdentity, nextSmIdentity);
         state.smIdentity = nextSmIdentity;
-        state.smIdentityWarning = null;
-        resetIdentityWarning();
         state.settings.contractStart = contractStart;
         state.settings.contractEnd = contractEnd;
         state.settings.start = document.getElementById('startTime').value;
@@ -4118,9 +4086,7 @@
       pendingHourlyImport = null;
       helperRefreshPending = false;
       helperRefreshReplaceExisting = false;
-      identityWarningShownKey = '';
       identityPromptDismissedKey = '';
-      state.smIdentityWarning = null;
       if (!loadProfile(state.email)) {
         state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
         state.rows = [];
@@ -4232,9 +4198,7 @@
       state.contracts = [];
       pendingHourlyImport = null;
       initialSetupPromptShownKey = '';
-      identityWarningShownKey = '';
       identityPromptDismissedKey = '';
-      state.smIdentityWarning = null;
       state.remoteReady = false;
       state.remoteStatus = 'unknown';
       state.remoteRevision = 0;
