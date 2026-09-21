@@ -2,6 +2,8 @@
 
 Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance task timer.
 
+The v0.5.18 runtime gives an exact normalized Beta Tracker worker name priority when more than one saved identity profile can fuzzy-match the linked name. This prevents a false identity block while still blocking genuinely ambiguous or different workers.
+
 ## What it does
 
 ### Beta Tracker

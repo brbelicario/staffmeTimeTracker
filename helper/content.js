@@ -151,17 +151,27 @@
     return identityKey(value).split(" ").filter((token) => token.length > 1);
   }
 
-  function identitiesMatch(sourceName, expectedName) {
+  function identityMatchScore(sourceName, expectedName) {
     const sourceKey = identityKey(sourceName);
     const expectedKey = identityKey(expectedName);
-    if (!sourceKey || !expectedKey) return false;
-    if (sourceKey === expectedKey) return true;
+    if (!sourceKey || !expectedKey) return 0;
+    if (sourceKey === expectedKey) return 10000 + sourceKey.length;
+
     const sourceTokens = new Set(identityTokens(sourceName));
     const expectedTokens = new Set(identityTokens(expectedName));
-    if (sourceTokens.size < 2 || expectedTokens.size < 2) return false;
-    const sourceIsShorter = Array.from(sourceTokens).every((token) => expectedTokens.has(token));
-    const expectedIsShorter = Array.from(expectedTokens).every((token) => sourceTokens.has(token));
-    return sourceIsShorter || expectedIsShorter;
+    if (sourceTokens.size < 2 || expectedTokens.size < 2) return 0;
+
+    const sourceContainsExpected = Array.from(expectedTokens).every((token) => sourceTokens.has(token));
+    const expectedContainsSource = Array.from(sourceTokens).every((token) => expectedTokens.has(token));
+    if (!sourceContainsExpected && !expectedContainsSource) return 0;
+
+    const overlap = Math.min(sourceTokens.size, expectedTokens.size);
+    const difference = Math.abs(sourceTokens.size - expectedTokens.size);
+    return 1000 + (overlap * 10) - difference;
+  }
+
+  function identitiesMatch(sourceName, expectedName) {
+    return identityMatchScore(sourceName, expectedName) > 0;
   }
 
   function identityNames(rows) {
@@ -234,12 +244,27 @@
       return { profile: null, state: entries.length > 1 ? "ambiguous" : "none" };
     }
 
-    const matches = entries.filter((profile) => identitiesMatch(profile.identity, expectedIdentity));
-    if (matches.length === 1) return { profile: matches[0], state: "matched" };
+    const expectedKey = identityKey(expectedIdentity);
+    const exactMatches = entries.filter((profile) => identityKey(profile.identity) === expectedKey);
+    if (exactMatches.length === 1) {
+      return { profile: exactMatches[0], state: "matched", matchType: "exact" };
+    }
+    if (exactMatches.length > 1) {
+      const activeExact = exactMatches.find((profile) => identityKey(profile.identity) === activeIdentityKey);
+      return activeExact
+        ? { profile: activeExact, state: "matched", matchType: "exact-active" }
+        : { profile: null, state: "ambiguous", matchType: "exact-ambiguous" };
+    }
+
+    const matches = entries
+      .map((profile) => ({ profile, score: identityMatchScore(profile.identity, expectedIdentity) }))
+      .filter((match) => match.score > 0)
+      .sort((a, b) => b.score - a.score);
+    if (matches.length === 1) return { profile: matches[0].profile, state: "matched", matchType: "fuzzy" };
     if (matches.length > 1) {
-      const active = matches.find((profile) => identityKey(profile.identity) === activeIdentityKey);
+      const active = matches.find((match) => identityKey(match.profile.identity) === activeIdentityKey);
       return active
-        ? { profile: active, state: "matched" }
+        ? { profile: active.profile, state: "matched", matchType: "active-fuzzy" }
         : { profile: null, state: "ambiguous" };
     }
     return { profile: null, state: "mismatch" };
@@ -1085,8 +1110,10 @@
           const availableProfiles = profileEntries(profiles);
           const selection = selectProfile(profiles, expectedIdentity, clean(storedStatus.identityKey));
           const activeIdentity = clean(storedStatus.identity);
-          const activeIdentityMismatch = Boolean(expectedIdentity && activeIdentity) && !identitiesMatch(activeIdentity, expectedIdentity);
-          const identityMismatch = Boolean(expectedIdentity) && (selection.state !== "matched" || activeIdentityMismatch);
+          // The selected profile is the source of truth. The global status
+          // identity can be stale when more than one Beta Tracker tab is open,
+          // so it must not turn an exact profile match into a false mismatch.
+          const identityMismatch = Boolean(expectedIdentity) && selection.state === "mismatch";
           const identityAmbiguous = selection.state === "ambiguous";
           const realRows = hasConsent && !identityMismatch && !identityAmbiguous && selection.profile
             ? selection.profile.rows
@@ -1096,9 +1123,10 @@
             ? stored[TEST_ROWS_KEY]
             : [];
           const rows = realRows.concat(testRows);
-          const observedForDashboard = identityMismatch && activeIdentity
-            ? [activeIdentity]
-            : availableProfiles.map((profile) => profile.identity);
+          const observedForDashboard = availableProfiles.map((profile) => profile.identity);
+          const selectedIdentity = selection.profile ? selection.profile.identity : "";
+          const observedIdentity = selectedIdentity ||
+            (observedForDashboard.length === 1 ? observedForDashboard[0] : activeIdentity);
           const responseStatus = hasConsent
             ? {
                 ...storedStatus,
@@ -1111,6 +1139,8 @@
                 identityMatched: !identityMismatch && !identityAmbiguous && Boolean(selection.profile || !expectedIdentity),
                 identityMismatch,
                 identityAmbiguous,
+                identitySelection: selection.matchType || selection.state,
+                selectedIdentity,
                 availableIdentities: observedForDashboard
               }
             : {
@@ -1138,7 +1168,7 @@
             identityMismatch,
             identityAmbiguous,
             expectedSmIdentity: expectedIdentity,
-            observedSmIdentity: storedStatus.identity || "",
+            observedSmIdentity: observedIdentity,
             observedIdentities: responseStatus.availableIdentities,
             helperStatus: responseStatus
           }, "*");
