@@ -1247,6 +1247,12 @@
       identityPromptDismissedKey = '';
     }
 
+    function clearStaleIdentityWarning() {
+      if (!state.smIdentityWarning) return;
+      state.smIdentityWarning = null;
+      identityWarningShownKey = '';
+    }
+
     async function pullRemoteProfile() {
       if (!state.email) return;
       state.remoteReady = false;
@@ -3099,6 +3105,7 @@
         helperIdentityNames.filter(Boolean).every(function(name) {
           return smIdentitiesExactlyMatch(name, state.smIdentity);
         });
+      if (exactIdentityMatch) clearStaleIdentityWarning();
       const identityMismatch = Boolean(state.helperStatus && state.helperStatus.identityMismatch) && !exactIdentityMatch;
       const detectedIdentity = normalizeSmIdentity(state.helperStatus && (state.helperStatus.observedSmIdentity || state.helperStatus.identity));
       const identityDetail = identityMismatch
@@ -3405,6 +3412,7 @@
       const exactIncomingMatch = Boolean(state.smIdentity && incomingNames.length) && incomingNames.every(function(name) {
         return smIdentitiesExactlyMatch(name, state.smIdentity);
       });
+      if (exactIncomingMatch) clearStaleIdentityWarning();
       const effectiveData = data && exactIncomingMatch && (data.identityMismatch === true || data.identityAmbiguous === true)
         ? Object.assign({}, data, {
             identityMismatch: false,
