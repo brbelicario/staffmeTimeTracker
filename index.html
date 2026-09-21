@@ -3468,6 +3468,10 @@
         return;
       }
       const names = sourceSmIdentityNames(payload.rows);
+      const exactImportedIdentityMatch = Boolean(state.smIdentity && names.length) && names.every(function(name) {
+        return smIdentitiesExactlyMatch(name, state.smIdentity);
+      });
+      if (exactImportedIdentityMatch) clearStaleIdentityWarning();
       if (!state.smIdentity && names.length > 1) {
         openSmIdentityMismatch(names);
         return;
