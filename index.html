@@ -3517,14 +3517,10 @@
       if (isModalOpen()) return;
       const days = [0, 1, 2, 3, 4, 5, 6];
       const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
-      const dismiss = function() {
-        closeModal();
-        render();
-      };
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="initialSetupBackdrop"><div class="modal">' +
-          '<div class="modal-head"><div><div class="eyebrow">First-time setup</div><h2>Set up your tracker</h2><p class="muted">Enter the schedule and pay details needed to start using your dashboard.</p></div><button class="close" id="closeInitialSetup" type="button">×</button></div>' +
-          '<div class="note"><span>●</span><div><strong>Complete these details to begin.</strong><br><span class="muted">You can change additional tracker rules later in Tracker Settings.</span></div></div>' +
+          '<div class="modal-head"><div><div class="eyebrow">Required setup</div><h2>Complete your tracker setup</h2><p class="muted">These details are required before you can use the dashboard.</p></div></div>' +
+          '<div class="note"><span>●</span><div><strong>Setup is required to continue.</strong><br><span class="muted">Your hourly rows and other account data will remain unchanged; only the setup fields below are required now.</span></div></div>' +
           '<form id="initialSetupForm">' +
             '<div class="week-label settings-section-label">Contract</div>' +
             '<div class="field-grid"><div class="field"><label for="initialContractStart">Contract start date</label><input id="initialContractStart" type="date" value="' + escapeHtml(state.settings.contractStart || '') + '" required></div><div class="field"><label for="initialContractEnd">Contract end date</label><input id="initialContractEnd" type="date" value="' + escapeHtml(state.settings.contractEnd || '') + '" required></div></div>' +
@@ -3537,13 +3533,11 @@
             '<div class="field-grid"><div class="field"><label for="initialMinimumFee">Minimum fee (USD)</label><input id="initialMinimumFee" type="number" min="0" step=".01" value="' + escapeHtml(pay.minimumFee) + '" required></div><div class="field"><label for="initialExcessRate">Excess hourly rate (USD)</label><input id="initialExcessRate" type="number" min="0" step=".01" value="' + escapeHtml(pay.excessRate) + '" required></div></div>' +
             '<div class="field-help">This sets the pay estimate shown on the dashboard. Other pay options can be adjusted later in Tracker Settings.</div>' +
             '<div class="auth-error" id="initialSetupError" hidden></div>' +
-            '<div class="modal-actions"><button type="button" class="btn" id="cancelInitialSetup">Set up later</button><button type="submit" class="btn btn-primary">Save setup</button></div>' +
+            '<div class="modal-actions"><button type="button" class="btn btn-quiet" id="initialSetupLogout">Log out</button><span class="modal-spacer"></span><button type="submit" class="btn btn-primary">Save and continue</button></div>' +
           '</form>' +
         '</div></div>';
-      document.getElementById('closeInitialSetup').addEventListener('click', dismiss);
-      document.getElementById('cancelInitialSetup').addEventListener('click', dismiss);
-      document.getElementById('initialSetupBackdrop').addEventListener('click', function(event) {
-        if (event.target.id === 'initialSetupBackdrop') dismiss();
+      document.getElementById('initialSetupLogout').addEventListener('click', function() {
+        document.getElementById('logoutBtn').click();
       });
       document.getElementById('initialSetupForm').addEventListener('submit', function(event) {
         event.preventDefault();
@@ -3851,19 +3845,8 @@
       if (!root) return;
       if (!range || range.invalid) {
         root.className = 'contract-notice';
-        if (isModalOpen() || initialSetupPromptShownKey !== state.email) {
-          root.hidden = true;
-          root.innerHTML = '';
-          return;
-        }
-        root.hidden = false;
-        const invalid = Boolean(range && range.invalid);
-        root.innerHTML =
-          '<div class="contract-notice-copy"><strong>' + (invalid ? 'Contract dates need attention' : 'Finish setting up your tracker') + '</strong><span>' + (invalid ? 'Enter a valid contract start and end date before using contract-based totals.' : 'Add your contract dates and pay details so the dashboard can calculate your metrics.') + '</span></div>' +
-          '<button class="btn" type="button" id="contractNoticeBtn">' + (invalid ? 'Fix contract settings' : 'Set up tracker') + '</button>';
-        document.getElementById('contractNoticeBtn').addEventListener('click', function() {
-          openInitialSetup();
-        });
+        root.hidden = true;
+        root.innerHTML = '';
         return;
       }
       if (!contractHasEnded(range)) {
