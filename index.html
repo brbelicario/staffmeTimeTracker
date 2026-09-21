@@ -3502,10 +3502,85 @@
       });
     }
 
+    function openInitialSetup() {
+      if (isModalOpen()) return;
+      const days = [0, 1, 2, 3, 4, 5, 6];
+      const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+      const dismiss = function() {
+        closeModal();
+        render();
+      };
+      document.getElementById('modalRoot').innerHTML =
+        '<div class="modal-backdrop" id="initialSetupBackdrop"><div class="modal">' +
+          '<div class="modal-head"><div><div class="eyebrow">First-time setup</div><h2>Set up your tracker</h2><p class="muted">Enter the schedule and pay details needed to start using your dashboard.</p></div><button class="close" id="closeInitialSetup" type="button">×</button></div>' +
+          '<div class="note"><span>●</span><div><strong>Complete these details to begin.</strong><br><span class="muted">You can change additional tracker rules later in Tracker Settings.</span></div></div>' +
+          '<form id="initialSetupForm">' +
+            '<div class="week-label settings-section-label">Contract</div>' +
+            '<div class="field-grid"><div class="field"><label for="initialContractStart">Contract start date</label><input id="initialContractStart" type="date" value="' + escapeHtml(state.settings.contractStart || '') + '" required></div><div class="field"><label for="initialContractEnd">Contract end date</label><input id="initialContractEnd" type="date" value="' + escapeHtml(state.settings.contractEnd || '') + '" required></div></div>' +
+            '<div class="field-help">These dates are inclusive shift-start dates. For overnight duty, the effective end is the next duty start after the displayed end date.</div>' +
+            '<div class="field-grid"><div class="field"><label for="initialStartTime">Duty starts</label><input id="initialStartTime" type="time" value="' + escapeHtml(state.settings.start || DEFAULT_SETTINGS.start) + '" required></div><div class="field"><label for="initialEndTime">Duty ends</label><input id="initialEndTime" type="time" value="' + escapeHtml(state.settings.end || DEFAULT_SETTINGS.end) + '" required></div></div>' +
+            '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
+              return '<label class="day-choice"><input type="checkbox" name="initialAdherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
+            }).join('') + '</div><div class="field-help">Choose the days that count toward weekend adherence.</div></div>' +
+            '<div class="week-label settings-section-label">Pay estimate</div>' +
+            '<div class="field-grid"><div class="field"><label for="initialMinimumFee">Minimum fee (USD)</label><input id="initialMinimumFee" type="number" min="0" step=".01" value="' + escapeHtml(pay.minimumFee) + '" required></div><div class="field"><label for="initialExcessRate">Excess hourly rate (USD)</label><input id="initialExcessRate" type="number" min="0" step=".01" value="' + escapeHtml(pay.excessRate) + '" required></div></div>' +
+            '<div class="field-help">This sets the pay estimate shown on the dashboard. Other pay options can be adjusted later in Tracker Settings.</div>' +
+            '<div class="auth-error" id="initialSetupError" hidden></div>' +
+            '<div class="modal-actions"><button type="button" class="btn" id="cancelInitialSetup">Set up later</button><button type="submit" class="btn btn-primary">Save setup</button></div>' +
+          '</form>' +
+        '</div></div>';
+      document.getElementById('closeInitialSetup').addEventListener('click', dismiss);
+      document.getElementById('cancelInitialSetup').addEventListener('click', dismiss);
+      document.getElementById('initialSetupBackdrop').addEventListener('click', function(event) {
+        if (event.target.id === 'initialSetupBackdrop') dismiss();
+      });
+      document.getElementById('initialSetupForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const errorRoot = document.getElementById('initialSetupError');
+        const contractStart = document.getElementById('initialContractStart').value;
+        const contractEnd = document.getElementById('initialContractEnd').value;
+        const dutyStart = document.getElementById('initialStartTime').value;
+        const dutyEnd = document.getElementById('initialEndTime').value;
+        const selected = Array.from(document.querySelectorAll('input[name="initialAdherenceDay"]:checked')).map(function(input) { return Number(input.value); });
+        const minimumFee = numberValue(document.getElementById('initialMinimumFee').value);
+        const excessRate = numberValue(document.getElementById('initialExcessRate').value);
+        let error = '';
+        if (!contractStart || !contractEnd) error = 'Enter both contract dates.';
+        else if (!parseDate(contractStart) || !parseDate(contractEnd) || parseDate(contractStart) > parseDate(contractEnd)) error = 'Contract end date must be on or after the start date.';
+        else if (parseMinutes(dutyStart) === null || parseMinutes(dutyEnd) === null) error = 'Enter a valid duty start and end time.';
+        else if (!selected.length) error = 'Choose at least one weekend adherence day.';
+        else if (minimumFee < 0 || excessRate < 0) error = 'Enter valid non-negative pay values.';
+        if (error) {
+          errorRoot.textContent = error;
+          errorRoot.hidden = false;
+          return;
+        }
+        const currentPay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+        state.settings = mergeSettings(Object.assign({}, state.settings, {
+          contractStart: contractStart,
+          contractEnd: contractEnd,
+          start: dutyStart,
+          end: dutyEnd,
+          adherenceDays: selected,
+          pay: Object.assign({}, currentPay, {
+            minimumFee: minimumFee,
+            excessRate: excessRate
+          })
+        }));
+        initialSetupPromptShownKey = state.email;
+        saveProfile();
+        queueRemoteSave();
+        closeModal();
+        render();
+        startExchangeRateRefresh();
+        showToast('Tracker setup saved.');
+      });
+    }
+
     function maybePromptForInitialSetup() {
       if (!state.email || initialSetupPromptShownKey === state.email || hasValidContract() || isModalOpen() || state.remoteStatus === 'loading') return;
       initialSetupPromptShownKey = state.email;
-      openSettings({ onboarding: true });
+      openInitialSetup();
     }
 
     function closeModal() {
@@ -3762,13 +3837,18 @@
       if (!root) return;
       if (!range || range.invalid) {
         root.className = 'contract-notice';
+        if (isModalOpen() || initialSetupPromptShownKey !== state.email) {
+          root.hidden = true;
+          root.innerHTML = '';
+          return;
+        }
         root.hidden = false;
         const invalid = Boolean(range && range.invalid);
         root.innerHTML =
-          '<div class="contract-notice-copy"><strong>' + (invalid ? 'Contract dates need attention' : 'Finish setting up your tracker') + '</strong><span>' + (invalid ? 'Enter a valid contract start and end date before using contract-based totals.' : 'Add your contract dates and review the schedule, targets, caps, and pay settings so the dashboard can calculate your metrics.') + '</span></div>' +
+          '<div class="contract-notice-copy"><strong>' + (invalid ? 'Contract dates need attention' : 'Finish setting up your tracker') + '</strong><span>' + (invalid ? 'Enter a valid contract start and end date before using contract-based totals.' : 'Add your contract dates and pay details so the dashboard can calculate your metrics.') + '</span></div>' +
           '<button class="btn" type="button" id="contractNoticeBtn">' + (invalid ? 'Fix contract settings' : 'Set up tracker') + '</button>';
         document.getElementById('contractNoticeBtn').addEventListener('click', function() {
-          openSettings({ onboarding: true });
+          openInitialSetup();
         });
         return;
       }
