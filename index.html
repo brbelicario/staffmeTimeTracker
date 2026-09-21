@@ -1155,6 +1155,12 @@
         .trim();
     }
 
+    function smIdentitiesExactlyMatch(first, second) {
+      const firstKey = smIdentityKey(first);
+      const secondKey = smIdentityKey(second);
+      return Boolean(firstKey && secondKey && firstKey === secondKey);
+    }
+
     function normalizeSmIdentityHistory(values) {
       const seen = new Set();
       const result = [];
@@ -3080,7 +3086,16 @@
       const hasRows = state.rows.length > 0;
       const tableFound = Boolean(state.helperStatus && state.helperStatus.tableFound);
       const parsedRows = state.helperStatus ? Number(state.helperStatus.parsedRows || 0) : 0;
-      const identityMismatch = Boolean(state.helperStatus && state.helperStatus.identityMismatch);
+      const helperIdentityNames = state.helperStatus
+        ? (Array.isArray(state.helperStatus.availableIdentities) && state.helperStatus.availableIdentities.length
+          ? state.helperStatus.availableIdentities
+          : [state.helperStatus.selectedIdentity || state.helperStatus.observedSmIdentity || state.helperStatus.identity || ''])
+        : [];
+      const exactIdentityMatch = Boolean(state.smIdentity) && helperIdentityNames.filter(Boolean).length > 0 &&
+        helperIdentityNames.filter(Boolean).every(function(name) {
+          return smIdentitiesExactlyMatch(name, state.smIdentity);
+        });
+      const identityMismatch = Boolean(state.helperStatus && state.helperStatus.identityMismatch) && !exactIdentityMatch;
       const detectedIdentity = normalizeSmIdentity(state.helperStatus && (state.helperStatus.observedSmIdentity || state.helperStatus.identity));
       const identityDetail = identityMismatch
         ? 'StaffMe Beta Tracker identity: ' + (detectedIdentity || 'a different worker') + ' does not match the Time Tracker identity: ' + (state.smIdentity || 'another worker') + '. No new data from Beta Tracker were imported.'
@@ -3377,16 +3392,36 @@
       if (state.smIdentity && (!data || smIdentityKey(data.expectedSmIdentity) !== smIdentityKey(state.smIdentity))) {
         return;
       }
-      state.helperStatus = data && data.helperStatus || state.helperStatus;
-      if (data && (data.identityMismatch === true || data.identityAmbiguous === true)) {
-        const observed = Array.isArray(data.observedIdentities) && data.observedIdentities.length
-          ? data.observedIdentities
-          : [data.observedSmIdentity || 'More than one Beta Tracker worker identity'];
+      const incomingNames = data && Array.isArray(data.observedIdentities) && data.observedIdentities.length
+        ? data.observedIdentities.filter(Boolean)
+        : [data && (data.selectedIdentity || data.observedSmIdentity) || ''].filter(Boolean);
+      const exactIncomingMatch = Boolean(state.smIdentity && incomingNames.length) && incomingNames.every(function(name) {
+        return smIdentitiesExactlyMatch(name, state.smIdentity);
+      });
+      const effectiveData = data && exactIncomingMatch && (data.identityMismatch === true || data.identityAmbiguous === true)
+        ? Object.assign({}, data, {
+            identityMismatch: false,
+            identityAmbiguous: false,
+            helperStatus: Object.assign({}, data.helperStatus || {}, {
+              identityMismatch: false,
+              identityAmbiguous: false,
+              identityMatched: true,
+              identityState: 'identified',
+              blocked: false,
+              blockedReason: ''
+            })
+          })
+        : data;
+      state.helperStatus = effectiveData && effectiveData.helperStatus || state.helperStatus;
+      if (effectiveData && (effectiveData.identityMismatch === true || effectiveData.identityAmbiguous === true)) {
+        const observed = incomingNames.length
+          ? incomingNames
+          : ['More than one Beta Tracker worker identity'];
         openSmIdentityMismatch(observed);
         render();
         return;
       }
-      const imported = normalizeRows(data && data.rows || []);
+      const imported = normalizeRows(effectiveData && effectiveData.rows || []);
       if (!imported.length) {
         render();
         showToast(state.helperStatus && state.helperStatus.tableFound
@@ -3396,8 +3431,8 @@
       }
       const payload = {
         rows: imported,
-        replaceExisting: Boolean(data && data.replaceExisting),
-        lastSync: data && data.lastSync ? data.lastSync : null
+        replaceExisting: Boolean(effectiveData && effectiveData.replaceExisting),
+        lastSync: effectiveData && effectiveData.lastSync ? effectiveData.lastSync : null
       };
       if (isModalOpen()) {
         queuePendingHourlyImport(payload);
