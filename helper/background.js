@@ -1,5 +1,5 @@
 const STORAGE_KEY = "smtrackerCbState";
-const STATE_VERSION = 1;
+const STATE_VERSION = 2;
 const QUEUE_HEARTBEAT_GAP_SECONDS = 4;
 
 const DEFAULT_STATE = {
@@ -42,7 +42,10 @@ function normalizeState(raw) {
 
 async function readState() {
   const result = await chrome.storage.local.get(STORAGE_KEY);
-  return normalizeState(result[STORAGE_KEY]);
+  const state = normalizeState(result[STORAGE_KEY]);
+  const changed = reconcilePersistedState(state, nowSeconds());
+  if (changed) await writeState(state);
+  return state;
 }
 
 async function writeState(state) {
@@ -93,14 +96,19 @@ function clearPause(state) {
   state.pauseReason = null;
 }
 
+function pauseForQueueLoss(state, pausedAt) {
+  if (!state.tracking || state.paused) return false;
+  state.paused = true;
+  state.pausedAt = Number.isFinite(Number(pausedAt)) ? Number(pausedAt) : nowSeconds();
+  state.pauseReason = "queue";
+  return true;
+}
+
 function pauseForMissingQueueHeartbeat(state, now) {
   if (!state.tracking || state.paused || !state.queuePageOpen || !state.lastPageReadyAt) return false;
   if (now - state.lastPageReadyAt <= QUEUE_HEARTBEAT_GAP_SECONDS) return false;
 
-  state.paused = true;
-  state.pausedAt = state.lastPageReadyAt;
-  state.pauseReason = "queue";
-  return true;
+  return pauseForQueueLoss(state, state.lastPageReadyAt);
 }
 
 function pruneQueueTabs(state, now) {
@@ -108,6 +116,25 @@ function pruneQueueTabs(state, now) {
   Object.entries(state.queueTabs).forEach(([tabId, lastSeen]) => {
     if (!Number.isFinite(Number(lastSeen)) || now - Number(lastSeen) > staleAfter) delete state.queueTabs[tabId];
   });
+}
+
+function reconcilePersistedState(state, now) {
+  let changed = false;
+  const beforeTabs = Object.keys(state.queueTabs).length;
+  pruneQueueTabs(state, now);
+  if (Object.keys(state.queueTabs).length !== beforeTabs) changed = true;
+
+  if (state.queuePageOpen && state.lastPageReadyAt && now - state.lastPageReadyAt > QUEUE_HEARTBEAT_GAP_SECONDS) {
+    if (pauseForMissingQueueHeartbeat(state, now)) changed = true;
+  }
+
+  // A closed queue can lose its pagehide message when the browser or PC is
+  // shutting down. Do not let the persisted session continue across that gap.
+  if (!state.queuePageOpen && state.tracking && !state.paused && (state.currentTaskId || state.lastPageReadyAt)) {
+    if (pauseForQueueLoss(state, now)) changed = true;
+  }
+
+  return changed;
 }
 
 function finalizeCurrentTask(state, finishedAt) {
@@ -258,6 +285,7 @@ async function updatePageStatus(message, sender) {
     state.pageVisible = message.visible !== false;
     state.lastPageReadyAt = now;
   } else if (message.status === "visibility") {
+    pauseForMissingQueueHeartbeat(state, now);
     pruneQueueTabs(state, now);
     if (tabId) state.queueTabs[tabId] = now;
     state.queuePageOpen = true;
@@ -267,10 +295,10 @@ async function updatePageStatus(message, sender) {
     if (tabId) delete state.queueTabs[tabId];
     const anotherQueueTabOpen = Object.keys(state.queueTabs).length > 0;
     state.queuePageOpen = anotherQueueTabOpen;
-    if (!anotherQueueTabOpen && state.tracking && !state.paused) {
-      state.paused = true;
-      state.pausedAt = now;
-      state.pauseReason = "queue";
+    if (!anotherQueueTabOpen) {
+      state.lastPageReadyAt = null;
+      state.pageVisible = false;
+      pauseForQueueLoss(state, now);
     }
   }
   state.lastEventAt = now;
@@ -300,6 +328,29 @@ async function resetSession() {
 
 chrome.runtime.onInstalled.addListener(async () => {
   const state = await readState();
+  await writeState(state);
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  const state = await readState();
+  await writeState(state);
+});
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const state = await readState();
+  const key = String(tabId);
+  const trackedTab = Object.prototype.hasOwnProperty.call(state.queueTabs, key);
+  if (!trackedTab && !state.queuePageOpen) return;
+
+  if (trackedTab) delete state.queueTabs[key];
+  pruneQueueTabs(state, nowSeconds());
+  const anotherQueueTabOpen = Object.keys(state.queueTabs).length > 0;
+  state.queuePageOpen = anotherQueueTabOpen;
+  if (!anotherQueueTabOpen) {
+    state.lastPageReadyAt = null;
+    state.pageVisible = false;
+    pauseForQueueLoss(state, nowSeconds());
+  }
   await writeState(state);
 });
 

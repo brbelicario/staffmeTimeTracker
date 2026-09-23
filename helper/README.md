@@ -2,7 +2,7 @@
 
 Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance task timer.
 
-The v0.5.20 runtime makes the extension's identity selection authoritative for dashboard imports. It sends rows only with an explicit verified Beta Tracker identity, while the dashboard no longer performs a second identity-review gate. Older rows that cannot be verified are preserved in the Time Tracker recovery history before they are excluded from cloud sync. It also gives an exact normalized Beta Tracker worker name priority when more than one saved identity profile can fuzzy-match the linked name, and treats an empty/loading Hourly AHT table as a waiting state instead of reusing an old identity-blocked status.
+The v0.5.21 runtime makes the extension's identity selection authoritative for dashboard imports. It sends rows only with an explicit verified Beta Tracker identity, while the dashboard no longer performs a second identity-review gate. Older rows that cannot be verified are preserved in the Time Tracker recovery history before they are excluded from cloud sync. It also gives an exact normalized Beta Tracker worker name priority when more than one saved identity profile can fuzzy-match the linked name, treats an empty/loading Hourly AHT table as a waiting state instead of reusing an old identity-blocked status, and reconciles CB timing when the queue or browser disappears unexpectedly.
 
 ## What it does
 
@@ -32,8 +32,8 @@ The v0.5.20 runtime makes the extension's identity selection authoritative for d
 - Shows the compact v1.13-style tracker strip fixed at the top of the webpage viewport, with reserved space so page controls remain visible.
 - Starts tracking automatically when the first valid task ID appears; the Start button remains available after a manual stop.
 - Calculates Task AHT and current-hour average AHT.
-- Pauses when the queue closes or its heartbeat stops.
-- Resumes when the same task ID returns.
+- Pauses when the queue closes or its heartbeat stops, including when the browser or PC shuts down before the close event arrives.
+- Rechecks the current task when the queue tab becomes visible again and resumes when the same task ID returns, without counting the unavailable time.
 - Starts a new task without recording the paused task when a different task ID returns.
 - Keeps multiple CB queue tabs from pausing each other.
 

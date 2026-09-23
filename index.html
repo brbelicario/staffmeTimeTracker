@@ -281,6 +281,23 @@
     .metric-card.orange .progress > span { background: var(--orange); }
     .metric-card.green .progress > span { background: var(--green); }
     .metric-foot { display: flex; justify-content: space-between; color: var(--muted); font-size: .78rem; margin-top: 10px; }
+    .daily-limit-notice {
+      display: flex; justify-content: space-between; align-items: center; gap: 18px;
+      margin-top: 14px; padding: 16px 19px; border: 1px solid rgba(35,168,199,.28);
+      border-radius: 16px; background: linear-gradient(135deg, #f3fbfd, #fbfcfe);
+    }
+    .daily-limit-notice.near { border-color: #f0c98d; background: #fff8ec; }
+    .daily-limit-notice.over { border-color: #efb0b0; background: #fff4f4; }
+    .daily-limit-copy { min-width: 0; }
+    .daily-limit-copy h2 { margin: 4px 0 3px; font-size: 1.05rem; }
+    .daily-limit-copy p { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+    .daily-limit-notice.near .daily-limit-copy h2 { color: #8a5b2d; }
+    .daily-limit-notice.over .daily-limit-copy h2 { color: #8f3b3b; }
+    .daily-limit-remaining { flex: 0 0 auto; text-align: right; }
+    .daily-limit-remaining strong { display: block; color: var(--navy); font-size: 1.45rem; letter-spacing: -.04em; }
+    .daily-limit-remaining span { display: block; margin-top: 2px; color: var(--muted); font-size: .72rem; font-weight: 800; }
+    .daily-limit-notice.near .daily-limit-remaining strong { color: #a35c22; }
+    .daily-limit-notice.over .daily-limit-remaining strong { color: #a53c3c; }
     .manual-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
     .manual-table input, .report-table input { min-width: 94px; padding: 8px 9px; }
     .manual-table td:last-child, .manual-table th:last-child { text-align: right; }
@@ -579,6 +596,11 @@
       .metric-value small { font-size: .78rem; }
       .progress { height: 6px; }
       .metric-foot { font-size: .7rem; margin-top: 7px; }
+      .daily-limit-notice { align-items: flex-start; flex-direction: column; gap: 8px; margin-top: 8px; padding: 13px 14px; border-radius: 15px; }
+      .daily-limit-copy h2 { font-size: .96rem; }
+      .daily-limit-copy p { font-size: .72rem; }
+      .daily-limit-remaining { text-align: left; }
+      .daily-limit-remaining strong { font-size: 1.25rem; }
       .week-summary { grid-template-columns: 1fr 1fr; gap: 7px; margin: 3px 0 14px; }
       .week-chip { padding: 9px; }
       .week-chip b { font-size: 1rem; }
@@ -745,6 +767,7 @@
       <div class="contract-notice" id="contractNotice" hidden></div>
 
       <div class="metric-grid" id="metricGrid"></div>
+      <div id="dailyLimitNotice"></div>
 
       <div class="content-grid">
         <section class="panel">
@@ -766,23 +789,17 @@
 
       <section class="panel full-panel">
         <div class="panel-head">
+          <div><div class="week-label">Contract calendar</div><h2>Adherence calendar</h2><p>Each row uses the current calendar date shown by StaffMe, including overnight rows after midnight.</p></div>
+        </div>
+        <div id="contractCalendar"></div>
+      </section>
+
+      <section class="panel full-panel">
+        <div class="panel-head">
           <div><div class="week-label">Manual additions</div><h2>Other Task and missing hours</h2><p>Add one total entry and split it between InCoverage, Weekend adherence, and outside-duty hours.</p></div>
           <button class="btn btn-primary" id="manualAddBtn">Add manual hours</button>
         </div>
         <div class="table-scroll"><table class="day-table manual-table"><thead><tr><th>Date</th><th>Work</th><th>Breakdown</th><th>Classification</th><th>Note</th><th></th></tr></thead><tbody id="manualRows"></tbody></table></div>
-      </section>
-
-      
-
-      
-
-      
-
-      <section class="panel full-panel">
-        <div class="panel-head">
-          <div><div class="week-label">Contract calendar</div><h2>Adherence calendar</h2><p>Each row uses the current calendar date shown by StaffMe, including overnight rows after midnight.</p></div>
-        </div>
-        <div id="contractCalendar"></div>
       </section>
 
       
@@ -1774,6 +1791,57 @@
       }).filter(function(entry) { return entry.work > cap; }).sort(function(a, b) { return b.work - a.work; });
     }
 
+    function dailyWorkLimitSummary(range) {
+      const cap = Math.max(0, Number(state.settings.caps.daily || 0));
+      if (!cap || !range || range.invalid) return null;
+
+      const today = new Date();
+      today.setHours(12, 0, 0, 0);
+      if (!dateInRange(today, range)) return null;
+
+      const todayKey = isoDate(today);
+      const worked = trackedItems().reduce(function(total, item) {
+        return item.date && isoDate(item.date) === todayKey && dateInRange(item.date, range)
+          ? total + Math.max(0, Number(item.value || 0))
+          : total;
+      }, 0);
+      const capMinutes = Math.round(cap * 60);
+      const workedMinutes = Math.max(0, Math.round(worked * 60));
+      return {
+        date: today,
+        capMinutes: capMinutes,
+        workedMinutes: workedMinutes,
+        differenceMinutes: capMinutes - workedMinutes
+      };
+    }
+
+    function renderDailyWorkLimit(range) {
+      const root = document.getElementById('dailyLimitNotice');
+      if (!root) return;
+      const summary = dailyWorkLimitSummary(range);
+      if (!summary) {
+        root.innerHTML = '';
+        return;
+      }
+
+      const difference = summary.differenceMinutes;
+      const status = difference < 0 ? 'over' : difference <= 60 ? 'near' : 'ok';
+      const remainingMinutes = Math.max(0, difference);
+      const headline = difference > 0
+        ? 'You have ' + hoursAndMinutes(remainingMinutes) + ' left for today.'
+        : difference === 0
+          ? 'You have reached today\'s work-hour limit.'
+          : 'Today\'s work-hour limit was exceeded by ' + hoursAndMinutes(Math.abs(difference)) + '.';
+      const rightLabel = difference < 0 ? 'over the limit' : 'remaining today';
+      const rightValue = difference < 0 ? hoursAndMinutes(Math.abs(difference)) : hoursAndMinutes(remainingMinutes);
+
+      root.innerHTML = '<section class="daily-limit-notice ' + status + '" aria-live="polite">' +
+        '<div class="daily-limit-copy"><div class="week-label">Today\'s work-hour limit</div><h2>' + headline + '</h2><p>' +
+          hoursAndMinutes(summary.workedMinutes / 60) + ' worked on ' + formatDate(summary.date) + ' of ' + hoursAndMinutes(summary.capMinutes / 60) + '. This uses the calendar-date total, including StaffMe rows and manual entries.</p></div>' +
+        '<div class="daily-limit-remaining"><strong>' + rightValue + '</strong><span>' + rightLabel + '</span></div>' +
+      '</section>';
+    }
+
     function renderCapMonitor(range) {
       const cap = Number(state.settings.caps.weekly || 75);
       const dailyWarnings = range && !range.invalid ? dailyCapWarnings(range) : [];
@@ -2632,6 +2700,15 @@
       return Number(value || 0).toFixed(2);
     }
 
+    function hoursAndMinutes(value) {
+      const totalMinutes = Math.max(0, Math.round(Number(value || 0) * 60));
+      const wholeHours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      if (!wholeHours) return minutes + 'm';
+      if (!minutes) return wholeHours + 'h';
+      return wholeHours + 'h ' + String(minutes).padStart(2, '0') + 'm';
+    }
+
     function money(value) {
       return Number(value || 0).toLocaleString(undefined, {
         minimumFractionDigits: 2,
@@ -3263,6 +3340,7 @@
         return '<tr><td>Week ' + week.index + reportComparisonNotice(week) + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + officialValueCell(week, 'displayWork', 'workReported') + '</td><td>' + officialValueCell(week, 'displayCoverage', 'coverageReported') + '</td><td>' + officialValueCell(week, 'displayAdherence', 'adherenceReported') + '</td></tr>';
       }).join('') : '<tr><td colspan="5"><div class="empty">Set an contract term to show weekly contract totals.</div></td></tr>';
 
+      renderDailyWorkLimit(range);
       renderContractCalendar(range);
       renderManualEntries();
       renderCapMonitor(range);

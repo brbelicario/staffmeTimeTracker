@@ -415,7 +415,7 @@
     await send({ type: "PAGE_STATUS", status: "ready", visible: state.pageVisible });
   }
 
-  async function scanAndReport() {
+  async function scanAndReport(forceTask = false) {
     if (state.scanInProgress) return;
     state.scanInProgress = true;
     try {
@@ -426,7 +426,7 @@
 
       await reportPageStatus();
       const taskId = extractTaskId();
-      if (taskId && taskId !== state.lastDetectedId) {
+      if (taskId && (forceTask || taskId !== state.lastDetectedId)) {
         state.lastDetectedId = taskId;
         await send({ type: "TASK_SEEN", taskId });
       }
@@ -480,7 +480,16 @@
     state.pageVisible = document.visibilityState === "visible";
     state.lastPageStatusAt = Date.now();
     await send({ type: "PAGE_STATUS", status: "visibility", visible: state.pageVisible });
+    if (state.pageVisible) await scanAndReport(true);
     render();
+  });
+
+  window.addEventListener("pageshow", () => {
+    if (document.visibilityState === "visible") scanAndReport(true);
+  });
+
+  window.addEventListener("focus", () => {
+    if (document.visibilityState === "visible") scanAndReport(true);
   });
 
   window.addEventListener("pagehide", () => {
