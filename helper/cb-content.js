@@ -9,6 +9,7 @@
     data: null,
     minimized: false,
     lastDetectedId: null,
+    dropNoticeActive: false,
     lastUrl: location.href,
     pageVisible: document.visibilityState === "visible",
     lastPageStatusAt: 0,
@@ -350,7 +351,9 @@
       ? Math.max(0, timingNow - data.sessionStartedAt)
       : 0;
     const currentHour = data.hourly && data.hourly[localHourKey()];
-    elements.taskId.textContent = data.currentTaskId || data.lastObservedTaskId || "—";
+    elements.taskId.textContent = data.droppedTaskId && !data.currentTaskId
+      ? "Dropped"
+      : data.currentTaskId || data.lastObservedTaskId || "—";
     elements.taskTimer.textContent = formatSeconds(activeTaskSeconds);
     elements.nextHour.textContent = formatNextHourCountdown();
     elements.aht.textContent = formatAht(
@@ -407,6 +410,12 @@
     return urlMatch ? urlMatch[1] : null;
   }
 
+  function hasDroppedAssignmentNotice() {
+    if (!document.body) return false;
+    const visibleText = String(document.body.innerText || "").replace(/\s+/g, " ").trim();
+    return /\btask assignment has been dropped\b/i.test(visibleText);
+  }
+
   async function reportPageStatus(force = false) {
     state.pageVisible = document.visibilityState === "visible";
     const now = Date.now();
@@ -426,7 +435,25 @@
 
       await reportPageStatus();
       const taskId = extractTaskId();
-      if (taskId && (forceTask || taskId !== state.lastDetectedId)) {
+      const previousTaskId = state.lastDetectedId;
+      const taskChanged = Boolean(taskId && taskId !== previousTaskId);
+      const droppedNotice = hasDroppedAssignmentNotice();
+      const knownTaskId = taskId || previousTaskId || (state.data && (state.data.currentTaskId || state.data.lastObservedTaskId));
+
+      if (!droppedNotice) state.dropNoticeActive = false;
+
+      // If the page still shows the drop notice while the task ID changes,
+      // discard the previous assignment first. Keep the notice latched until
+      // the page removes it so the new task is not accidentally discarded too.
+      if (droppedNotice && !state.dropNoticeActive) {
+        const droppedTaskId = taskChanged && previousTaskId ? previousTaskId : knownTaskId;
+        if (droppedTaskId) {
+          state.dropNoticeActive = true;
+          await send({ type: "TASK_DROPPED", taskId: droppedTaskId });
+        }
+      }
+
+      if (taskId && (forceTask || taskChanged)) {
         state.lastDetectedId = taskId;
         await send({ type: "TASK_SEEN", taskId });
       }

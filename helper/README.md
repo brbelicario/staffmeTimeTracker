@@ -2,7 +2,7 @@
 
 Manifest V3 Chrome/Edge extension for the SM work-hour tracker and CB compliance task timer.
 
-The v0.5.21 runtime makes the extension's identity selection authoritative for dashboard imports. It sends rows only with an explicit verified Beta Tracker identity, while the dashboard no longer performs a second identity-review gate. Older rows that cannot be verified are preserved in the Time Tracker recovery history before they are excluded from cloud sync. It also gives an exact normalized Beta Tracker worker name priority when more than one saved identity profile can fuzzy-match the linked name, treats an empty/loading Hourly AHT table as a waiting state instead of reusing an old identity-blocked status, and reconciles CB timing when the queue or browser disappears unexpectedly.
+The v0.5.22 runtime makes the extension's identity selection authoritative for dashboard imports. It sends rows only with an explicit verified Beta Tracker identity, while the dashboard no longer performs a second identity-review gate. Older rows that cannot be verified are preserved in the Time Tracker recovery history before they are excluded from cloud sync. It also gives an exact normalized Beta Tracker worker name priority when more than one saved identity profile can fuzzy-match the linked name, treats an empty/loading Hourly AHT table as a waiting state instead of reusing an old identity-blocked status, reconciles CB timing when the queue or browser disappears unexpectedly, and excludes assignments that the CB queue explicitly reports as dropped.
 
 ## What it does
 
@@ -35,6 +35,7 @@ The v0.5.21 runtime makes the extension's identity selection authoritative for d
 - Pauses when the queue closes or its heartbeat stops, including when the browser or PC shuts down before the close event arrives.
 - Rechecks the current task when the queue tab becomes visible again and resumes when the same task ID returns, without counting the unavailable time.
 - Starts a new task without recording the paused task when a different task ID returns.
+- Detects “Task assignment has been dropped,” discards that task's live AHT without increasing completed-task or hourly AHT totals, keeps the overall session running, and waits for the next valid task.
 - Keeps multiple CB queue tabs from pausing each other.
 
 The extension does not read passwords, cookies, authentication tokens, general browsing history, private messages, images, or unrelated page content. It does not create demo rows.

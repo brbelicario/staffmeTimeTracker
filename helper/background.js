@@ -1,5 +1,5 @@
 const STORAGE_KEY = "smtrackerCbState";
-const STATE_VERSION = 2;
+const STATE_VERSION = 3;
 const QUEUE_HEARTBEAT_GAP_SECONDS = 4;
 
 const DEFAULT_STATE = {
@@ -13,6 +13,7 @@ const DEFAULT_STATE = {
   currentTaskId: null,
   currentTaskStartedAt: null,
   lastObservedTaskId: null,
+  droppedTaskId: null,
   completedTasks: 0,
   totalActiveSeconds: 0,
   hourly: {},
@@ -31,6 +32,7 @@ function normalizeState(raw) {
   const state = { ...cloneDefaultState(), ...(raw || {}) };
   state.hourly = raw && raw.hourly && typeof raw.hourly === "object" ? raw.hourly : {};
   state.queueTabs = raw && raw.queueTabs && typeof raw.queueTabs === "object" ? raw.queueTabs : {};
+  state.droppedTaskId = cleanTaskId(state.droppedTaskId);
   state.completedTasks = Number.isFinite(Number(state.completedTasks)) ? Number(state.completedTasks) : 0;
   state.totalActiveSeconds = Number.isFinite(Number(state.totalActiveSeconds)) ? Number(state.totalActiveSeconds) : 0;
   state.autoStartBlocked = Boolean(state.autoStartBlocked);
@@ -158,6 +160,24 @@ function finalizeCurrentTask(state, finishedAt) {
   return duration;
 }
 
+function discardDroppedTask(state, taskId, droppedAt) {
+  const requestedId = cleanTaskId(taskId);
+  const activeId = cleanTaskId(state.currentTaskId);
+
+  // Ignore a late status message from a task that has already been replaced.
+  if (requestedId && activeId && requestedId !== activeId) return false;
+
+  const droppedId = requestedId || activeId || cleanTaskId(state.lastObservedTaskId);
+  if (!droppedId) return false;
+
+  state.droppedTaskId = droppedId;
+  state.currentTaskId = null;
+  state.currentTaskStartedAt = null;
+  state.lastObservedTaskId = droppedId;
+  state.lastEventAt = Number.isFinite(Number(droppedAt)) ? Number(droppedAt) : nowSeconds();
+  return true;
+}
+
 async function setTracking(enabled) {
   const state = await readState();
   const now = nowSeconds();
@@ -167,7 +187,8 @@ async function setTracking(enabled) {
     state.autoStartBlocked = false;
     clearPause(state);
     state.sessionStartedAt = now;
-    state.currentTaskId = cleanTaskId(state.lastObservedTaskId);
+    const latestId = cleanTaskId(state.lastObservedTaskId);
+    state.currentTaskId = latestId && latestId !== state.droppedTaskId ? latestId : null;
     state.currentTaskStartedAt = state.currentTaskId ? now : null;
     state.lastEventAt = now;
   } else {
@@ -200,7 +221,7 @@ async function setPaused(requestedPaused) {
     clearPause(state);
 
     const latestId = cleanTaskId(state.lastObservedTaskId);
-    if (latestId && latestId !== state.currentTaskId) {
+    if (latestId && latestId !== state.droppedTaskId && latestId !== state.currentTaskId) {
       state.currentTaskId = latestId;
       state.currentTaskStartedAt = now;
     }
@@ -223,6 +244,14 @@ async function observeTask(taskId, sender) {
   state.lastObservedTaskId = cleanId;
   state.queuePageOpen = true;
   state.lastPageReadyAt = now;
+
+  // Keep the dropped assignment ignored while the page is still showing its
+  // final task ID. A repeated TASK_SEEN must not restart its AHT timer.
+  if (state.droppedTaskId && cleanId === state.droppedTaskId) {
+    state.lastEventAt = now;
+    return writeState(state);
+  }
+  if (state.droppedTaskId && cleanId !== state.droppedTaskId) state.droppedTaskId = null;
 
   if (!state.tracking) {
     if (!state.autoStartBlocked) {
@@ -272,6 +301,19 @@ async function observeTask(taskId, sender) {
   return writeState(state);
 }
 
+async function observeDroppedTask(taskId, sender) {
+  const state = await readState();
+  const now = nowSeconds();
+  pauseForMissingQueueHeartbeat(state, now);
+  const tabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? String(sender.tab.id) : null;
+  pruneQueueTabs(state, now);
+  if (tabId) state.queueTabs[tabId] = now;
+  state.queuePageOpen = true;
+  state.lastPageReadyAt = now;
+  discardDroppedTask(state, taskId, now);
+  return writeState(state);
+}
+
 async function updatePageStatus(message, sender) {
   const state = await readState();
   const now = nowSeconds();
@@ -315,8 +357,9 @@ async function resetSession() {
   fresh.autoStartBlocked = state.autoStartBlocked;
   fresh.pauseReason = null;
   fresh.sessionStartedAt = tracking ? now : null;
-  fresh.currentTaskId = tracking ? latestId : null;
-  fresh.currentTaskStartedAt = tracking && latestId ? now : null;
+  fresh.droppedTaskId = state.droppedTaskId;
+  fresh.currentTaskId = tracking && latestId && latestId !== fresh.droppedTaskId ? latestId : null;
+  fresh.currentTaskStartedAt = tracking && fresh.currentTaskId ? now : null;
   fresh.lastObservedTaskId = latestId;
   fresh.queuePageOpen = state.queuePageOpen;
   fresh.queueTabs = state.queueTabs;
@@ -367,6 +410,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return resetSession();
       case "TASK_SEEN":
         return observeTask(message.taskId, sender);
+      case "TASK_DROPPED":
+        return observeDroppedTask(message.taskId, sender);
       case "PAGE_STATUS":
         return updatePageStatus(message, sender);
       default:

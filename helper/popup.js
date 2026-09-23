@@ -141,7 +141,9 @@ function renderCb(state) {
     state.paused ? "Paused" : state.tracking ? "Tracking" : "Ready",
     state.paused ? "#f59e0b" : state.tracking ? "#56e39f" : "#8b949e"
   );
-  taskElement.textContent = state.currentTaskId || state.lastObservedTaskId || "No task ID detected";
+  taskElement.textContent = state.droppedTaskId && !state.currentTaskId
+    ? "Dropped assignment"
+    : state.currentTaskId || state.lastObservedTaskId || "No task ID detected";
   trackingButton.textContent = state.tracking ? "Stop CB tracking" : "Start CB tracking";
   trackingButton.className = state.tracking ? "muted" : "primary";
 
