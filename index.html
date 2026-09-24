@@ -1791,17 +1791,13 @@
       }).filter(function(entry) { return entry.work > cap; }).sort(function(a, b) { return b.work - a.work; });
     }
 
-    function dailyWorkLimitSummary(range) {
+    function dailyWorkLimitSummary() {
       const cap = Math.max(0, Number(state.settings.caps.daily || 0));
-      if (!cap || !range || range.invalid) return null;
-
       const today = new Date();
       today.setHours(12, 0, 0, 0);
-      if (!dateInRange(today, range)) return null;
-
       const todayKey = isoDate(today);
       const worked = trackedItems().reduce(function(total, item) {
-        return item.date && isoDate(item.date) === todayKey && dateInRange(item.date, range)
+        return item.date && isoDate(item.date) === todayKey
           ? total + Math.max(0, Number(item.value || 0))
           : total;
       }, 0);
@@ -1809,18 +1805,23 @@
       const workedMinutes = Math.max(0, Math.round(worked * 60));
       return {
         date: today,
+        configured: cap > 0,
         capMinutes: capMinutes,
         workedMinutes: workedMinutes,
         differenceMinutes: capMinutes - workedMinutes
       };
     }
 
-    function renderDailyWorkLimit(range) {
+    function renderDailyWorkLimit() {
       const root = document.getElementById('dailyLimitNotice');
       if (!root) return;
-      const summary = dailyWorkLimitSummary(range);
-      if (!summary) {
-        root.innerHTML = '';
+      const summary = dailyWorkLimitSummary();
+      if (!summary.configured) {
+        root.innerHTML = '<section class="daily-limit-notice setup" aria-live="polite">' +
+          '<div class="daily-limit-copy"><div class="week-label">Today\'s work-hour limit</div><h2>Set a daily work limit to calculate your remaining time.</h2><p>' +
+            hoursAndMinutes(summary.workedMinutes / 60) + ' worked on ' + formatDate(summary.date) + '. Set the daily limit in Tracker Settings when you are ready.</p></div>' +
+          '<div class="daily-limit-remaining"><strong>Not set</strong><span>daily limit</span></div>' +
+        '</section>';
         return;
       }
 
@@ -3340,7 +3341,7 @@
         return '<tr><td>Week ' + week.index + reportComparisonNotice(week) + '</td><td>' + formatDate(week.start) + ' – ' + formatDate(week.end) + '</td><td>' + officialValueCell(week, 'displayWork', 'workReported') + '</td><td>' + officialValueCell(week, 'displayCoverage', 'coverageReported') + '</td><td>' + officialValueCell(week, 'displayAdherence', 'adherenceReported') + '</td></tr>';
       }).join('') : '<tr><td colspan="5"><div class="empty">Set an contract term to show weekly contract totals.</div></td></tr>';
 
-      renderDailyWorkLimit(range);
+      renderDailyWorkLimit();
       renderContractCalendar(range);
       renderManualEntries();
       renderCapMonitor(range);
