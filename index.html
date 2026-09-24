@@ -1829,12 +1829,12 @@
       const status = difference < 0 ? 'over' : difference <= 60 ? 'near' : 'ok';
       const remainingMinutes = Math.max(0, difference);
       const headline = difference > 0
-        ? 'You have ' + hoursAndMinutes(remainingMinutes) + ' left for today.'
+        ? 'You have ' + minutesAsHoursAndMinutes(remainingMinutes) + ' left for today.'
         : difference === 0
           ? 'You have reached today\'s work-hour limit.'
-          : 'Today\'s work-hour limit was exceeded by ' + hoursAndMinutes(Math.abs(difference)) + '.';
+          : 'Today\'s work-hour limit was exceeded by ' + minutesAsHoursAndMinutes(Math.abs(difference)) + '.';
       const rightLabel = difference < 0 ? 'over the limit' : 'remaining today';
-      const rightValue = difference < 0 ? hoursAndMinutes(Math.abs(difference)) : hoursAndMinutes(remainingMinutes);
+      const rightValue = difference < 0 ? minutesAsHoursAndMinutes(Math.abs(difference)) : minutesAsHoursAndMinutes(remainingMinutes);
 
       root.innerHTML = '<section class="daily-limit-notice ' + status + '" aria-live="polite">' +
         '<div class="daily-limit-copy"><div class="week-label">Today\'s work-hour limit</div><h2>' + headline + '</h2><p>' +
@@ -2699,6 +2699,15 @@
 
     function hours(value) {
       return Number(value || 0).toFixed(2);
+    }
+
+    function minutesAsHoursAndMinutes(totalMinutes) {
+      const safeMinutes = Math.max(0, Math.round(Number(totalMinutes || 0)));
+      const wholeHours = Math.floor(safeMinutes / 60);
+      const minutes = safeMinutes % 60;
+      if (!wholeHours) return minutes + 'm';
+      if (!minutes) return wholeHours + 'h';
+      return wholeHours + 'h ' + String(minutes).padStart(2, '0') + 'm';
     }
 
     function hoursAndMinutes(value) {
