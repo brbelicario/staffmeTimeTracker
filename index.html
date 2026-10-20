@@ -891,6 +891,7 @@
       adherenceDays: [],
       targets: { work: 45, coverage: 40, weekend: 16 },
       caps: { daily: 12, weekly: 75 },
+      payout: { workingDays: 15, holidayCalendar: 'PH-national' },
       pay: {
         minimumHours: 180,
         minimumFee: 360,
@@ -1148,6 +1149,10 @@
       const merged = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), settings || {});
       merged.targets = Object.assign({}, DEFAULT_SETTINGS.targets, (settings || {}).targets || {});
       merged.caps = Object.assign({}, DEFAULT_SETTINGS.caps, (settings || {}).caps || {});
+      merged.payout = Object.assign({}, DEFAULT_SETTINGS.payout, (settings || {}).payout || {});
+      const payoutDays = Math.floor(numberValue(merged.payout.workingDays));
+      merged.payout.workingDays = payoutDays > 0 ? payoutDays : DEFAULT_SETTINGS.payout.workingDays;
+      merged.payout.holidayCalendar = 'PH-national';
       merged.pay = Object.assign({}, DEFAULT_SETTINGS.pay, (settings || {}).pay || {});
       merged.adherenceDays = Array.isArray(merged.adherenceDays) && merged.adherenceDays.length
         ? merged.adherenceDays.map(Number).filter(function(day) { return day >= 0 && day <= 6; })
@@ -1933,6 +1938,100 @@
       return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
     }
 
+    // Philippine nationwide regular and special non-working holidays used by the payout estimate.
+    // Local/provincial holidays are intentionally not included in the nationwide calendar.
+    const PH_NATIONAL_HOLIDAYS = {
+      2026: [
+        '2026-01-01', '2026-02-17', '2026-03-20',
+        '2026-04-02', '2026-04-03', '2026-04-04', '2026-04-09',
+        '2026-05-01', '2026-05-27', '2026-06-12', '2026-08-21',
+        '2026-08-31', '2026-11-01', '2026-11-02', '2026-11-30',
+        '2026-12-08', '2026-12-24', '2026-12-25', '2026-12-30', '2026-12-31'
+      ]
+    };
+    const PH_FIXED_HOLIDAY_MONTH_DAYS = [
+      '01-01', '04-09', '05-01', '06-12', '08-21',
+      '11-01', '11-02', '12-08', '12-24', '12-25', '12-30', '12-31'
+    ];
+
+    function isPhilippineNationalHoliday(date) {
+      if (!date) return false;
+      const key = isoDate(date);
+      const yearDates = PH_NATIONAL_HOLIDAYS[date.getFullYear()];
+      if (yearDates && yearDates.indexOf(key) >= 0) return true;
+      const monthDay = key.slice(5);
+      if (PH_FIXED_HOLIDAY_MONTH_DAYS.indexOf(monthDay) >= 0) return true;
+      // National Heroes Day is the last Monday of August.
+      if (date.getMonth() === 7 && date.getDay() === 1 && date.getDate() > 24) return true;
+      return false;
+    }
+
+    function isPayoutWorkingDay(date) {
+      return Boolean(date) && date.getDay() !== 0 && date.getDay() !== 6 && !isPhilippineNationalHoliday(date);
+    }
+
+    function firstPayoutWorkingDay(value) {
+      let cursor = parseDate(value);
+      let guard = 0;
+      while (cursor && !isPayoutWorkingDay(cursor) && guard < 370) {
+        cursor = addDays(cursor, 1);
+        guard += 1;
+      }
+      return cursor;
+    }
+
+    function payoutWorkingDays(settings) {
+      const configured = Math.floor(numberValue(settings && settings.payout && settings.payout.workingDays));
+      return configured > 0 ? configured : DEFAULT_SETTINGS.payout.workingDays;
+    }
+
+    function payoutDateFromAnchor(value, workingDays) {
+      let cursor = firstPayoutWorkingDay(value);
+      const total = Math.max(1, Math.floor(numberValue(workingDays)));
+      if (!cursor) return null;
+      let counted = 1;
+      let guard = 0;
+      while (counted < total && guard < 3700) {
+        cursor = addDays(cursor, 1);
+        guard += 1;
+        if (isPayoutWorkingDay(cursor)) counted += 1;
+      }
+      return cursor;
+    }
+
+    function nextContractForPayout(contract) {
+      const records = [];
+      const current = currentContractSnapshot();
+      if (current) records.push(current);
+      normalizeContracts(state.contracts).forEach(function(item) { records.push(item); });
+      return records
+        .filter(function(item) {
+          return item && item.id !== contract.id && item.start > contract.start;
+        })
+        .sort(function(a, b) { return a.start.localeCompare(b.start); })[0] || null;
+    }
+
+    function payoutEstimateForContract(contract) {
+      if (!contract || contract.id === 'current') return null;
+      const next = nextContractForPayout(contract);
+      if (!next) return null;
+      const rawStart = parseDate(next.start);
+      const countFrom = firstPayoutWorkingDay(rawStart);
+      const date = payoutDateFromAnchor(countFrom, payoutWorkingDays(contract.settings));
+      if (!date) return null;
+      return {
+        nextContractStart: rawStart,
+        countFrom: countFrom,
+        date: date,
+        workingDays: payoutWorkingDays(contract.settings)
+      };
+    }
+
+    function formatPayoutEstimate(payout) {
+      if (!payout) return 'Payout estimate pending next contract';
+      return 'Payout estimate: ' + formatDate(payout.date);
+    }
+
     function formatDate(value) {
       const date = parseDate(value);
       if (!date) return String(value || '—');
@@ -2314,6 +2413,7 @@
       const boundary = contract.effectiveEndAt ? formatDateTime(contract.effectiveEndAt) : (range && !range.invalid ? formatDateTime(contractEndBoundary(range)) : '—');
       const rateLabel = pay.usdToPhp > 0 ? '₱' + money(pay.usdToPhp) : '—';
       const dataLabel = isCurrent ? 'Live data' : 'Saved data';
+      const payout = isCurrent ? null : payoutEstimateForContract(contract);
       return '<button class="contract-card" type="button" data-contract-id="' + escapeHtml(contract.id) + '" aria-label="View details for contract ' + escapeHtml(period) + '">' +
         '<div class="contract-card-head"><div><div class="contract-card-title">' + (isCurrent ? 'Current contract' : 'Contract ' + escapeHtml(period)) + '</div><div class="contract-card-subtitle">' + escapeHtml(period) + ' · Final shift boundary ' + escapeHtml(boundary) + '</div><span class="contract-status ' + statusClass + '">' + statusText + '</span></div><span class="contract-card-link">View details →</span></div>' +
         '<div class="contract-card-stats">' +
@@ -2322,7 +2422,7 @@
           '<div class="contract-card-stat"><span>Weekend adherence</span><strong>' + hours(contract.totals.adherence) + 'h</strong></div>' +
         '</div>' +
         '<div class="contract-card-pay"><span>' + (isCurrent ? 'Current estimate' : 'Final estimate') + '</span><strong>$' + money(pay.usdTotal) + '<em>₱' + money(pay.phpTotal) + '</em></strong></div>' +
-        '<div class="contract-card-meta"><span>Minimum $' + money(pay.minimumFee) + ' · Excess $' + money(pay.excessRate) + '/h</span><span>' + dataLabel + ': ' + contract.rows.length + ' StaffMe rows · ' + contract.manualEntries.length + ' manual entries</span><span>USD/PHP: ' + rateLabel + '</span></div>' +
+        '<div class="contract-card-meta"><span>Minimum $' + money(pay.minimumFee) + ' · Excess $' + money(pay.excessRate) + '/h</span><span>' + dataLabel + ': ' + contract.rows.length + ' StaffMe rows · ' + contract.manualEntries.length + ' manual entries</span><span>USD/PHP: ' + rateLabel + '</span><span>' + escapeHtml(formatPayoutEstimate(payout)) + '</span></div>' +
         '</button>';
     }
 
@@ -2368,6 +2468,7 @@
       const rateText = pay.rateMode === 'manual'
         ? 'Manual rate'
         : 'Automatic' + (pay.rateSource ? ' · ' + escapeHtml(pay.rateSource) : ' · Google Finance');
+      const payout = current ? null : payoutEstimateForContract(contract);
       const action = current && ended ? '<button class="btn btn-primary" id="historyStartNewContract" type="button">Start new contract</button>' : '';
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="historyDetailBackdrop"><div class="modal">' +
@@ -2386,6 +2487,7 @@
             '<div class="detail-item"><span>StaffMe rows stored</span><strong>' + contract.rows.length + '</strong></div>' +
             '<div class="detail-item"><span>Manual entries</span><strong>' + contract.manualEntries.length + '</strong></div>' +
             '<div class="detail-item"><span>Reported weeks</span><strong>' + contract.reportedWeeks.length + '</strong></div>' +
+            '<div class="detail-item"><span>Payout estimate</span><strong>' + (payout ? escapeHtml(formatDate(payout.date)) + '<br><span class="muted">' + payout.workingDays + ' working days from ' + escapeHtml(formatDate(payout.countFrom)) + '</span>' : (current ? 'Available after next contract starts' : 'Next contract not set')) + '</strong></div>' +
             '<div class="detail-item"><span>Archived on</span><strong>' + (contract.archivedAt ? escapeHtml(formatDateTime(contract.archivedAt)) : 'Not archived') + '</strong></div>' +
           '</div>' +
           '<div class="field-help">This view is read-only. The saved payment rules and USD/PHP rate belong to this contract and will not change when the current rate updates.</div>' +
@@ -3962,6 +4064,7 @@
       }
       const draft = mergeSettings(state.settings);
       const pay = Object.assign({}, DEFAULT_SETTINGS.pay, draft.pay || {});
+      const payout = Object.assign({}, DEFAULT_SETTINGS.payout, draft.payout || {});
       const days = [0,1,2,3,4,5,6];
       const suggestedStartDate = addDays(current.end, 1);
       const suggestedEndDate = addDays(suggestedStartDate, 29);
@@ -3976,6 +4079,8 @@
           '<form id="newContractForm">' +
             '<div class="field-grid"><div class="field"><label for="newContractStart">New contract starts</label><input id="newContractStart" type="date" value="' + isoDate(suggestedStartDate) + '" required></div><div class="field"><label for="newContractEnd">New contract ends</label><input id="newContractEnd" type="date" value="' + isoDate(suggestedEndDate) + '" required></div></div>' +
             '<div class="field-help">Suggested dates cover 30 calendar days. For overnight duty, the new contract begins at the duty start time on the start date and ends at the next duty start after the displayed end date. Edit either date if your contract uses different dates.</div>' +
+            '<div class="field"><label for="newPayoutWorkingDays">Working days until payout</label><input id="newPayoutWorkingDays" type="number" min="1" step="1" value="' + payout.workingDays + '" required></div>' +
+            '<div class="field-help">The previous contract’s payout estimate will count from this new contract’s first working day. Weekends and Philippine nationwide holidays are skipped.</div>' +
             '<div class="field-grid"><div class="field"><label for="newStartTime">Duty starts</label><input id="newStartTime" type="time" value="' + escapeHtml(draft.start) + '" required></div><div class="field"><label for="newEndTime">Duty ends</label><input id="newEndTime" type="time" value="' + escapeHtml(draft.end) + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="newAdherenceDay" value="' + day + '"' + (draft.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
@@ -4024,6 +4129,7 @@
         const minimumFee = numberValue(document.getElementById('newMinimumFee').value);
         const excessRate = numberValue(document.getElementById('newExcessRate').value);
         const usdToPhp = numberValue(document.getElementById('newUsdToPhp').value);
+        const payoutWorkingDays = Math.floor(numberValue(document.getElementById('newPayoutWorkingDays').value));
         const exchangeRateMode = exchangeRateModeControl.value === 'manual' ? 'manual' : 'automatic';
         if (!start || !end || start > end) {
           errorRoot.textContent = 'Enter a valid new contract date range.';
@@ -4055,6 +4161,11 @@
           errorRoot.hidden = false;
           return;
         }
+        if (payoutWorkingDays < 1) {
+          errorRoot.textContent = 'Working days until payout must be at least 1.';
+          errorRoot.hidden = false;
+          return;
+        }
         if (!state.remoteReady) {
           errorRoot.textContent = 'Wait until the cloud copy is available before starting a new contract, so the current data can be archived safely.';
           errorRoot.hidden = false;
@@ -4079,6 +4190,10 @@
           contractStart: isoDate(start),
           contractEnd: isoDate(end),
           adherenceDays: selected,
+          payout: {
+            workingDays: payoutWorkingDays,
+            holidayCalendar: 'PH-national'
+          },
           targets: {
             work: numberValue(document.getElementById('newWorkTarget').value),
             coverage: numberValue(document.getElementById('newCoverageTarget').value),
@@ -4121,6 +4236,7 @@
       const onboarding = Boolean(options && options.onboarding);
       const days = [0,1,2,3,4,5,6];
       const pay = Object.assign({}, DEFAULT_SETTINGS.pay, state.settings.pay || {});
+      const payout = Object.assign({}, DEFAULT_SETTINGS.payout, state.settings.payout || {});
       const payMode = pay.exchangeRateMode === 'manual' ? 'manual' : 'automatic';
       const contractRequired = onboarding ? ' required' : '';
       const modalEyebrow = onboarding ? 'First-time setup' : 'Tracker rules';
@@ -4144,6 +4260,8 @@
             '<div class="week-label settings-section-label">Contract</div>' +
             '<div class="field-grid"><div class="field"><label for="contractStart">Contract start date</label><input id="contractStart" type="date" value="' + (state.settings.contractStart || '') + '"' + contractRequired + '></div><div class="field"><label for="contractEnd">Contract end date</label><input id="contractEnd" type="date" value="' + (state.settings.contractEnd || '') + '"' + contractRequired + '></div></div>' +
             '<div class="field-help">' + contractHelp + '</div>' +
+            '<div class="field"><label for="payoutWorkingDays">Working days until payout</label><input id="payoutWorkingDays" type="number" min="1" step="1" value="' + payout.workingDays + '"' + contractRequired + '></div>' +
+            '<div class="field-help">Past contracts use the next contract start as the payout-count start. Weekends and Philippine nationwide holidays are skipped.</div>' +
             '<div class="field-grid"><div class="field"><label for="startTime">Duty starts</label><input id="startTime" type="time" value="' + state.settings.start + '" required></div><div class="field"><label for="endTime">Duty ends</label><input id="endTime" type="time" value="' + state.settings.end + '" required></div></div>' +
             '<div class="field"><label>Weekend adherence</label><div class="day-grid">' + days.map(function(day) {
               return '<label class="day-choice"><input type="checkbox" name="adherenceDay" value="' + day + '"' + (state.settings.adherenceDays.indexOf(day) >= 0 ? ' checked' : '') + '><span>' + dayName(day).slice(0, 3) + '</span></label>';
@@ -4180,6 +4298,7 @@
         const nextSmIdentity = normalizeSmIdentity(document.getElementById('smWorkerName').value);
         const contractStart = document.getElementById('contractStart').value;
         const contractEnd = document.getElementById('contractEnd').value;
+        const payoutWorkingDays = Math.floor(numberValue(document.getElementById('payoutWorkingDays').value));
         const minimumPaidHours = numberValue(document.getElementById('minimumPaidHours').value);
         const minimumFee = numberValue(document.getElementById('minimumFee').value);
         const excessRate = numberValue(document.getElementById('excessRate').value);
@@ -4189,6 +4308,7 @@
         if (nextSmIdentity && !smIdentityKey(nextSmIdentity)) { showToast('Enter a valid Beta Tracker worker name or leave it blank.'); return; }
         if ((contractStart && !contractEnd) || (!contractStart && contractEnd)) { showToast('Enter both contract dates.'); return; }
         if (contractStart && contractEnd && parseDate(contractStart) > parseDate(contractEnd)) { showToast('Contract end date must be on or after the start date.'); return; }
+        if (payoutWorkingDays < 1) { showToast('Working days until payout must be at least 1.'); return; }
         if (!selected.length) { showToast('Choose at least one adherence day.'); return; }
         if (minimumPaidHours <= 0) { showToast('Minimum paid hours must be greater than zero.'); return; }
         if (minimumFee < 0 || excessRate < 0 || usdToPhp <= 0) { showToast('Enter valid non-negative pay values and a PHP conversion rate.'); return; }
@@ -4210,6 +4330,10 @@
         state.settings.start = document.getElementById('startTime').value;
         state.settings.end = document.getElementById('endTime').value;
         state.settings.adherenceDays = selected;
+        state.settings.payout = {
+          workingDays: payoutWorkingDays,
+          holidayCalendar: 'PH-national'
+        };
         state.settings.targets = {
           work: numberValue(document.getElementById('workTarget').value),
           coverage: numberValue(document.getElementById('coverageTarget').value),
