@@ -919,6 +919,7 @@
       remoteReady: false,
       remoteRevision: 0,
       remoteConflict: false,
+      localProfileChangesPending: false,
       user: null,
       smIdentity: '',
       smIdentityHistory: [],
@@ -1002,6 +1003,7 @@
         smIdentityHistory: normalizeSmIdentityHistory(state.smIdentityHistory),
         remoteRevision: Number(state.remoteRevision) || 0,
         hourlyDataClearPending: state.hourlyDataClearPending === true,
+        localProfileChangesPending: state.localProfileChangesPending === true,
         autoRefresh: state.autoRefresh !== false,
         contractPromptDismissedKey: state.contractPromptDismissedKey || ''
       }));
@@ -1311,6 +1313,7 @@
         const remote = await response.json();
         state.remoteRevision = Number(remote.revision) || 0;
         const preserveClearedHourlyData = state.hourlyDataClearPending === true;
+        const preserveLocalProfile = state.localProfileChangesPending === true;
         let remoteCleanupBlocked = false;
         let automaticCleanupCount = 0;
         if (remote.found) {
@@ -1322,7 +1325,7 @@
           if (Object.prototype.hasOwnProperty.call(remote, 'smIdentity')) {
             state.smIdentity = normalizeSmIdentity(remote.smIdentity);
           }
-          if (!preserveClearedHourlyData) {
+          if (!preserveClearedHourlyData && !preserveLocalProfile) {
             const remoteRows = normalizeRows(remote.rows || []);
             if (state.smIdentity) {
               const combinedRows = dedupeRows(state.rows.concat(remoteRows));
@@ -1346,14 +1349,16 @@
               state.rows = dedupeRows(state.rows.concat(remoteRows));
             }
           }
-          state.manualEntries = mergeManualEntries(state.manualEntries, normalizeManualEntries(remote.manualEntries || []));
-          state.reportedWeeks = mergeReportedWeeks(state.reportedWeeks, normalizeReportedWeeks(remote.reportedWeeks || []));
           state.contracts = mergeContracts(state.contracts, normalizeContracts(remote.contracts || []));
-          if (remote.settings) state.settings = mergeSettings(remote.settings);
-          if (!preserveClearedHourlyData && remote.lastSync && (!state.lastSync || new Date(remote.lastSync) > new Date(state.lastSync))) {
+          if (!preserveLocalProfile) {
+            state.manualEntries = mergeManualEntries(state.manualEntries, normalizeManualEntries(remote.manualEntries || []));
+            state.reportedWeeks = mergeReportedWeeks(state.reportedWeeks, normalizeReportedWeeks(remote.reportedWeeks || []));
+            if (remote.settings) state.settings = mergeSettings(remote.settings);
+          }
+          if (!preserveClearedHourlyData && !preserveLocalProfile && remote.lastSync && (!state.lastSync || new Date(remote.lastSync) > new Date(state.lastSync))) {
             state.lastSync = remote.lastSync;
           }
-          if (!preserveClearedHourlyData && state.rows.length && state.source === 'waiting') state.source = 'remote';
+          if (!preserveClearedHourlyData && !preserveLocalProfile && state.rows.length && state.source === 'waiting') state.source = 'remote';
         }
         state.remoteReady = true;
         state.remoteStatus = remoteCleanupBlocked ? 'local-only' : 'synced';
@@ -1417,6 +1422,7 @@
         const savedResult = await response.json().catch(function() { return {}; });
         state.remoteRevision = Number(savedResult.revision) || (Number(state.remoteRevision) || 0) + 1;
         state.remoteConflict = false;
+        state.localProfileChangesPending = false;
         saveProfile();
         if (state.hourlyDataClearPending) {
           state.hourlyDataClearPending = false;
@@ -1458,6 +1464,7 @@
         state.smIdentityHistory = mergeSmIdentityHistory(saved.smIdentityHistory, state.smIdentity);
         state.remoteRevision = Number(saved.remoteRevision) || 0;
         state.remoteConflict = false;
+        state.localProfileChangesPending = saved.localProfileChangesPending === true;
         state.source = isDemoProfile ? 'waiting' : (state.rows.length ? savedSource : 'waiting');
         state.lastSync = saved.lastSync || null;
         state.hourlyDataClearPending = saved.hourlyDataClearPending === true;
@@ -4328,6 +4335,7 @@
           state.hourlyDataClearPending = false;
           state.contractPromptDismissedKey = '';
           contractPromptShownKey = '';
+          state.localProfileChangesPending = true;
           dashboardView = 'active';
           saveProfile();
           queueRemoteSave();
@@ -4518,6 +4526,7 @@
         state.smIdentityHistory = [];
         state.remoteRevision = 0;
         state.remoteConflict = false;
+        state.localProfileChangesPending = false;
         saveProfile();
       }
       state.remoteReady = false;
@@ -4616,6 +4625,7 @@
       state.remoteStatus = 'unknown';
       state.remoteRevision = 0;
       state.remoteConflict = false;
+      state.localProfileChangesPending = false;
       helperRefreshPending = false;
       helperRefreshReplaceExisting = false;
       stopAutoRefresh();
