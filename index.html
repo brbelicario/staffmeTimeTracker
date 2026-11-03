@@ -4082,7 +4082,11 @@
       if (!state.email || !range || range.invalid || !contractHasEnded(range) || !state.remoteReady) return;
       const key = contractKey(range);
       const modalRoot = document.getElementById('modalRoot');
-      if (state.contractPromptDismissedKey === key || contractPromptShownKey === key || (modalRoot && modalRoot.firstElementChild)) return;
+      // A dismissed prompt should not permanently hide an expired contract
+      // after the account is opened again. The notice remains available for
+      // the current session, while the next session asks again so the user
+      // cannot accidentally keep working under the old term indefinitely.
+      if (contractPromptShownKey === key || (modalRoot && modalRoot.firstElementChild)) return;
       contractPromptShownKey = key;
       openNewContract({ prompted: true });
     }
