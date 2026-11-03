@@ -4240,7 +4240,7 @@
         const excessRate = numberValue(document.getElementById('newExcessRate').value);
         const usdToPhp = numberValue(document.getElementById('newUsdToPhp').value);
         const payoutWorkingDays = Math.floor(numberValue(document.getElementById('newPayoutWorkingDays').value));
-        const exchangeRateMode = exchangeRateModeControl.value === 'manual' ? 'manual' : 'automatic';
+        const selectedExchangeRateMode = exchangeRateModeControl.value === 'manual' ? 'manual' : 'automatic';
         if (!start || !end || start > end) {
           errorRoot.textContent = 'Enter a valid new contract date range.';
           errorRoot.hidden = false;
@@ -4321,8 +4321,8 @@
             minimumFee: minimumFee,
             excessRate: excessRate,
             usdToPhp: usdToPhp,
-            exchangeRateMode: exchangeRateMode,
-            exchangeRateUpdatedAt: exchangeRateMode === 'automatic' ? '' : '',
+            exchangeRateMode: selectedExchangeRateMode,
+            exchangeRateUpdatedAt: selectedExchangeRateMode === 'automatic' ? '' : '',
             exchangeRateSource: ''
           }
           });
