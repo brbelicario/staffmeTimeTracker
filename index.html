@@ -1520,7 +1520,14 @@
     }
 
     function contractHasEnded(range) {
-      return Boolean(range && !range.invalid && new Date() >= contractEndBoundary(range));
+      if (!range || range.invalid) return false;
+      // Contract dates are the displayed shift-start dates. Once the local
+      // calendar moves past the displayed end date, the dashboard must stop
+      // treating that term as the active contract. Keep the effective duty
+      // boundary for history/details, but do not make users wait until the
+      // next overnight duty start before the next contract can begin.
+      const today = localToday();
+      return today > range.end || new Date() >= contractEndBoundary(range);
     }
 
     function contractKey(range) {
@@ -2283,6 +2290,25 @@
       return Object.assign(estimate, stored && typeof stored === 'object' ? stored : {});
     }
 
+    function normalizeFinalEstimate(contract, payEstimate) {
+      const stored = contract && contract.finalEstimate && typeof contract.finalEstimate === 'object'
+        ? contract.finalEstimate
+        : null;
+      // Older archived records only stored payEstimate. Keep those records
+      // readable while giving every newly archived contract an explicit,
+      // immutable final-rate snapshot.
+      if (!stored && !(contract && contract.archivedAt)) return null;
+      return {
+        usdTotal: Math.max(0, numberValue(stored && stored.usdTotal !== undefined ? stored.usdTotal : payEstimate.usdTotal)),
+        phpTotal: Math.max(0, numberValue(stored && stored.phpTotal !== undefined ? stored.phpTotal : payEstimate.phpTotal)),
+        usdToPhp: Math.max(0, numberValue(stored && stored.usdToPhp !== undefined ? stored.usdToPhp : payEstimate.usdToPhp)),
+        rateMode: stored && stored.rateMode ? String(stored.rateMode) : String(payEstimate.rateMode || 'automatic'),
+        rateSource: stored && stored.rateSource ? String(stored.rateSource) : String(payEstimate.rateSource || ''),
+        rateUpdatedAt: stored && stored.rateUpdatedAt ? String(stored.rateUpdatedAt) : String(payEstimate.rateUpdatedAt || ''),
+        capturedAt: stored && stored.capturedAt ? String(stored.capturedAt) : String(contract && contract.archivedAt || '')
+      };
+    }
+
     function normalizeContracts(contracts) {
       return (Array.isArray(contracts) ? contracts : []).map(function(contract, index) {
         const start = String(contract && contract.start || '').slice(0, 10);
@@ -2297,6 +2323,7 @@
           coverage: Math.max(0, numberValue(totals.coverage)),
           adherence: Math.max(0, numberValue(totals.adherence))
         };
+        const payEstimate = calculateStoredPayEstimate(normalizedTotals, settings, contract && contract.payEstimate);
         return {
           id: String(contract && contract.id || ('contract-' + index + '-' + start)),
           start: start,
@@ -2306,7 +2333,8 @@
           manualEntries: normalizeManualEntries(contract && contract.manualEntries || []),
           reportedWeeks: normalizeReportedWeeks(contract && contract.reportedWeeks || []),
           totals: normalizedTotals,
-          payEstimate: calculateStoredPayEstimate(normalizedTotals, settings, contract && contract.payEstimate),
+          payEstimate: payEstimate,
+          finalEstimate: normalizeFinalEstimate(contract, payEstimate),
           effectiveEndAt: String(contract && contract.effectiveEndAt || ''),
           archivedAt: String(contract && contract.archivedAt || '')
         };
@@ -2334,6 +2362,7 @@
           reportedWeeks: mergeReportedWeeks(local.reportedWeeks, remote.reportedWeeks),
           totals: remote.totals.work || remote.totals.coverage || remote.totals.adherence ? remote.totals : local.totals,
           payEstimate: remote.payEstimate || local.payEstimate,
+          finalEstimate: remote.finalEstimate || local.finalEstimate,
           effectiveEndAt: remote.effectiveEndAt || local.effectiveEndAt,
           archivedAt: remote.archivedAt || local.archivedAt
         });
@@ -2355,6 +2384,8 @@
         return dateInRange(parseDate(report.start), range);
       });
       const settings = mergeSettings(state.settings);
+      const archivedAt = new Date().toISOString();
+      const payEstimate = calculatePayEstimate(official.work, settings.pay);
       return {
         id: makeId('contract'),
         start: isoDate(range.start),
@@ -2364,9 +2395,18 @@
         manualEntries: manualEntries,
         reportedWeeks: reportedWeeks,
         totals: official,
-        payEstimate: calculatePayEstimate(official.work, settings.pay),
+        payEstimate: payEstimate,
+        finalEstimate: {
+          usdTotal: payEstimate.usdTotal,
+          phpTotal: payEstimate.phpTotal,
+          usdToPhp: payEstimate.usdToPhp,
+          rateMode: payEstimate.rateMode,
+          rateSource: payEstimate.rateSource,
+          rateUpdatedAt: payEstimate.rateUpdatedAt,
+          capturedAt: archivedAt
+        },
         effectiveEndAt: contractEndBoundary(range).toISOString(),
-        archivedAt: new Date().toISOString()
+        archivedAt: archivedAt
       };
     }
 
@@ -2391,6 +2431,7 @@
         }),
         totals: totals,
         payEstimate: calculatePayEstimate(totals.work, settings.pay),
+        finalEstimate: null,
         effectiveEndAt: contractEndBoundary(range).toISOString(),
         archivedAt: ''
       };
@@ -2409,11 +2450,22 @@
       const statusClass = ended ? 'ended' : 'active';
       const settings = mergeSettings(contract.settings);
       const pay = calculateStoredPayEstimate(contract.totals, settings, contract.payEstimate);
+      const finalEstimate = !isCurrent ? (contract.finalEstimate || pay) : null;
+      const displayPay = finalEstimate
+        ? Object.assign({}, pay, {
+            usdTotal: finalEstimate.usdTotal,
+            phpTotal: finalEstimate.phpTotal,
+            usdToPhp: finalEstimate.usdToPhp
+          })
+        : pay;
       const period = formatDate(parseDate(contract.start)) + ' – ' + formatDate(parseDate(contract.end));
       const boundary = contract.effectiveEndAt ? formatDateTime(contract.effectiveEndAt) : (range && !range.invalid ? formatDateTime(contractEndBoundary(range)) : '—');
-      const rateLabel = pay.usdToPhp > 0 ? '₱' + money(pay.usdToPhp) : '—';
+      const rateLabel = displayPay.usdToPhp > 0 ? '₱' + money(displayPay.usdToPhp) : '—';
       const dataLabel = isCurrent ? 'Live data' : 'Saved data';
       const payout = isCurrent ? null : payoutEstimateForContract(contract);
+      const rateMeta = isCurrent
+        ? 'Current USD/PHP: ' + rateLabel
+        : 'Final USD/PHP: ' + rateLabel + (finalEstimate && finalEstimate.capturedAt ? ' · captured ' + escapeHtml(formatDateTime(finalEstimate.capturedAt)) : '');
       return '<button class="contract-card" type="button" data-contract-id="' + escapeHtml(contract.id) + '" aria-label="View details for contract ' + escapeHtml(period) + '">' +
         '<div class="contract-card-head"><div><div class="contract-card-title">' + (isCurrent ? 'Current contract' : 'Contract ' + escapeHtml(period)) + '</div><div class="contract-card-subtitle">' + escapeHtml(period) + ' · Final shift boundary ' + escapeHtml(boundary) + '</div><span class="contract-status ' + statusClass + '">' + statusText + '</span></div><span class="contract-card-link">View details →</span></div>' +
         '<div class="contract-card-stats">' +
@@ -2421,8 +2473,8 @@
           '<div class="contract-card-stat"><span>InCoverage</span><strong>' + hours(contract.totals.coverage) + 'h</strong></div>' +
           '<div class="contract-card-stat"><span>Weekend adherence</span><strong>' + hours(contract.totals.adherence) + 'h</strong></div>' +
         '</div>' +
-        '<div class="contract-card-pay"><span>' + (isCurrent ? 'Current estimate' : 'Final estimate') + '</span><strong>$' + money(pay.usdTotal) + '<em>₱' + money(pay.phpTotal) + '</em></strong></div>' +
-        '<div class="contract-card-meta"><span>Minimum $' + money(pay.minimumFee) + ' · Excess $' + money(pay.excessRate) + '/h</span><span>' + dataLabel + ': ' + contract.rows.length + ' StaffMe rows · ' + contract.manualEntries.length + ' manual entries</span><span>USD/PHP: ' + rateLabel + '</span><span>' + escapeHtml(formatPayoutEstimate(payout)) + '</span></div>' +
+        '<div class="contract-card-pay"><span>' + (isCurrent ? 'Current estimate' : 'Final estimate at contract end') + '</span><strong>$' + money(displayPay.usdTotal) + '<em>₱' + money(displayPay.phpTotal) + '</em></strong></div>' +
+        '<div class="contract-card-meta"><span>Minimum $' + money(displayPay.minimumFee) + ' · Excess $' + money(displayPay.excessRate) + '/h</span><span>' + dataLabel + ': ' + contract.rows.length + ' StaffMe rows · ' + contract.manualEntries.length + ' manual entries</span><span>' + rateMeta + '</span><span>' + escapeHtml(formatPayoutEstimate(payout)) + '</span></div>' +
         '</button>';
     }
 
@@ -2461,27 +2513,36 @@
       const range = rangeForContractRecord(contract);
       const settings = mergeSettings(contract.settings);
       const pay = calculateStoredPayEstimate(contract.totals, settings, contract.payEstimate);
+      const finalEstimate = !current ? (contract.finalEstimate || pay) : null;
+      const displayPay = finalEstimate
+        ? Object.assign({}, pay, {
+            usdTotal: finalEstimate.usdTotal,
+            phpTotal: finalEstimate.phpTotal,
+            usdToPhp: finalEstimate.usdToPhp
+          })
+        : pay;
       const ended = !current || (range && contractHasEnded(range));
       const statusText = ended ? 'Ended' : 'Active';
       const statusClass = ended ? 'ended' : 'active';
       const boundary = contract.effectiveEndAt ? formatDateTime(contract.effectiveEndAt) : '—';
-      const rateText = pay.rateMode === 'manual'
+      const rateText = displayPay.rateMode === 'manual'
         ? 'Manual rate'
-        : 'Automatic' + (pay.rateSource ? ' · ' + escapeHtml(pay.rateSource) : ' · Google Finance');
+        : 'Automatic' + (displayPay.rateSource ? ' · ' + escapeHtml(displayPay.rateSource) : ' · Google Finance');
       const payout = current ? null : payoutEstimateForContract(contract);
       const action = current && ended ? '<button class="btn btn-primary" id="historyStartNewContract" type="button">Start new contract</button>' : '';
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="historyDetailBackdrop"><div class="modal">' +
           '<div class="modal-head"><div><div class="eyebrow">Read-only contract history</div><h2>' + (current ? 'Current contract' : 'Previous contract') + '</h2><p class="muted">' + escapeHtml(formatDate(parseDate(contract.start)) + ' – ' + formatDate(parseDate(contract.end))) + '</p></div><button class="close" id="closeHistoryDetail" type="button">×</button></div>' +
           '<div class="detail-status"><span class="contract-status ' + statusClass + '">' + statusText + '</span><span class="muted">' + (boundary !== '—' ? 'Final duty boundary: ' + escapeHtml(boundary) : '') + '</span></div>' +
-          '<div class="detail-pay"><div class="week-label">' + (current ? 'Current estimate' : 'Final estimate') + '</div><strong>$' + money(pay.usdTotal) + '</strong><span>₱' + money(pay.phpTotal) + '</span></div>' +
+          '<div class="detail-pay"><div class="week-label">' + (current ? 'Current estimate' : 'Final estimate at contract end') + '</div><strong>$' + money(displayPay.usdTotal) + '</strong><span>₱' + money(displayPay.phpTotal) + '</span></div>' +
           '<div class="detail-grid">' +
             '<div class="detail-item"><span>Total work hours</span><strong>' + hours(contract.totals.work) + 'h</strong></div>' +
             '<div class="detail-item"><span>InCoverage hours</span><strong>' + hours(contract.totals.coverage) + 'h</strong></div>' +
             '<div class="detail-item"><span>Weekend adherence</span><strong>' + hours(contract.totals.adherence) + 'h</strong></div>' +
-            '<div class="detail-item"><span>Minimum fee</span><strong>$' + money(pay.minimumFee) + '</strong></div>' +
-            '<div class="detail-item"><span>Excess hourly rate</span><strong>$' + money(pay.excessRate) + '/h</strong></div>' +
-            '<div class="detail-item"><span>USD to PHP rate</span><strong>' + rateText + '<br>₱' + money(pay.usdToPhp) + '</strong></div>' +
+            '<div class="detail-item"><span>Minimum fee</span><strong>$' + money(displayPay.minimumFee) + '</strong></div>' +
+            '<div class="detail-item"><span>Excess hourly rate</span><strong>$' + money(displayPay.excessRate) + '/h</strong></div>' +
+            '<div class="detail-item"><span>' + (current ? 'Current USD/PHP rate' : 'USD/PHP rate used for final estimate') + '</span><strong>' + rateText + '<br>₱' + money(displayPay.usdToPhp) + '</strong></div>' +
+            (!current ? '<div class="detail-item"><span>Final estimate captured</span><strong>$' + money(displayPay.usdTotal) + '<br>₱' + money(displayPay.phpTotal) + (finalEstimate && finalEstimate.capturedAt ? '<br><span class="muted">' + escapeHtml(formatDateTime(finalEstimate.capturedAt)) + '</span>' : '') + '</strong></div>' : '') +
             '<div class="detail-item"><span>Duty window</span><strong>' + escapeHtml(settings.start) + ' – ' + escapeHtml(settings.end) + '</strong></div>' +
             '<div class="detail-item"><span>Weekend adherence days</span><strong>' + settings.adherenceDays.map(dayName).join(', ') + '</strong></div>' +
             '<div class="detail-item"><span>StaffMe rows stored</span><strong>' + contract.rows.length + '</strong></div>' +
@@ -3484,9 +3545,10 @@
 
       renderHourlyData(range);
 
-       renderContractStatus(range);
-       scheduleContractEndPrompt(range);
-       window.setTimeout(maybePromptForInitialSetup, 0);
+      renderContractStatus(range);
+      scheduleContractEndPrompt(range);
+      window.setTimeout(maybePromptForInitialSetup, 0);
+      window.setTimeout(maybePromptForEndedContract, 0);
     }
 
     function showToast(message) {
@@ -4028,6 +4090,17 @@
     function scheduleContractEndPrompt(range) {
       window.clearTimeout(contractEndTimer);
       contractEndTimer = null;
+      if (!state.email || !range || range.invalid || contractHasEnded(range)) return;
+      // Re-render at the first local moment after the displayed contract end
+      // date, even when the tab stays open and no data refresh happens.
+      const nextDate = new Date(range.end);
+      nextDate.setHours(0, 0, 0, 0);
+      nextDate.setDate(nextDate.getDate() + 1);
+      const delay = Math.max(1000, nextDate.getTime() - Date.now() + 250);
+      contractEndTimer = window.setTimeout(function() {
+        contractEndTimer = null;
+        render();
+      }, delay);
     }
 
     function renderContractStatus(range) {
@@ -4048,7 +4121,7 @@
       root.className = 'contract-notice';
       root.hidden = false;
       root.innerHTML =
-        '<div class="contract-notice-copy"><strong>Contract ended on ' + escapeHtml(formatDate(range.end)) + '</strong><span>Final duty boundary: ' + escapeHtml(formatDateTime(contractEndBoundary(range))) + '. Start a new contract to continue tracking hours.</span></div>' +
+        '<div class="contract-notice-copy"><strong>Contract term ended on ' + escapeHtml(formatDate(range.end)) + '</strong><span>Final duty boundary: ' + escapeHtml(formatDateTime(contractEndBoundary(range))) + '. Start the next contract to continue tracking hours; this contract will remain in Contract History with its final USD/PHP snapshot.</span></div>' +
         '<button class="btn" type="button" id="contractNoticeBtn">Start new contract</button>';
       document.getElementById('contractNoticeBtn').addEventListener('click', function() {
         openNewContract();
@@ -4070,7 +4143,7 @@
       const suggestedEndDate = addDays(suggestedStartDate, 29);
       const currentEffectiveEnd = contractEndBoundary(current);
       const intro = prompted
-        ? 'Your contract has reached its final shift boundary. Review the suggested next contract before saving.'
+        ? 'Your contract term has ended. Review the suggested next contract before saving.'
         : 'The current contract will be archived with its StaffMe rows, manual hours, and reported weekly metrics.';
       document.getElementById('modalRoot').innerHTML =
         '<div class="modal-backdrop" id="newContractBackdrop"><div class="modal">' +
@@ -4171,6 +4244,10 @@
           errorRoot.hidden = false;
           return;
         }
+        // Capture the latest available USD/PHP rate before the old contract
+        // is archived. If the automatic service is unavailable, the saved
+        // fallback rate remains the explicit rate used in the snapshot.
+        if (exchangeRateMode() === 'automatic') await refreshExchangeRate(true);
         const backup = await createRecoverySnapshot('Before starting a new contract');
         if (!backup.ok) {
           errorRoot.textContent = 'The current data could not be backed up, so the new contract was not started.';
@@ -4721,3 +4798,4 @@
   </script>
 </body>
 </html>
+
