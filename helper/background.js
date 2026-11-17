@@ -1,5 +1,6 @@
 const STORAGE_KEY = "smtrackerCbState";
-const STATE_VERSION = 3;
+const STATE_VERSION = 4;
+const AHT_HISTORY_KEY = "smtrackerCbAhtHistory";
 const QUEUE_HEARTBEAT_GAP_SECONDS = 4;
 
 const DEFAULT_STATE = {
@@ -28,9 +29,30 @@ function cloneDefaultState() {
   return JSON.parse(JSON.stringify(DEFAULT_STATE));
 }
 
+function normalizeHourlyHistory(raw) {
+  const history = {};
+  if (!raw || typeof raw !== "object") return history;
+
+  Object.entries(raw).forEach(([key, item]) => {
+    if (!item || typeof item !== "object") return;
+    const completedTasks = Number(item.completedTasks);
+    const totalSeconds = Number(item.totalSeconds);
+    if (!key || !Number.isFinite(completedTasks) || completedTasks <= 0) return;
+    if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return;
+    history[key] = {
+      key,
+      label: String(item.label || key),
+      completedTasks,
+      totalSeconds
+    };
+  });
+
+  return history;
+}
+
 function normalizeState(raw) {
   const state = { ...cloneDefaultState(), ...(raw || {}) };
-  state.hourly = raw && raw.hourly && typeof raw.hourly === "object" ? raw.hourly : {};
+  state.hourly = normalizeHourlyHistory(raw && raw.hourly);
   state.queueTabs = raw && raw.queueTabs && typeof raw.queueTabs === "object" ? raw.queueTabs : {};
   state.droppedTaskId = cleanTaskId(state.droppedTaskId);
   state.completedTasks = Number.isFinite(Number(state.completedTasks)) ? Number(state.completedTasks) : 0;
@@ -43,16 +65,33 @@ function normalizeState(raw) {
 }
 
 async function readState() {
-  const result = await chrome.storage.local.get(STORAGE_KEY);
+  const result = await chrome.storage.local.get([STORAGE_KEY, AHT_HISTORY_KEY]);
   const state = normalizeState(result[STORAGE_KEY]);
+  const stateHistory = normalizeHourlyHistory(state.hourly);
+  const hasPersistentHistory = result[AHT_HISTORY_KEY] !== undefined;
+
+  // Migrate the old in-state hourly aggregate once. The dedicated history
+  // bucket is then the durable source for completed-task AHT and is never
+  // changed by queue/tab/browser lifecycle events.
+  if (hasPersistentHistory) {
+    state.hourly = normalizeHourlyHistory(result[AHT_HISTORY_KEY]);
+  } else if (Object.keys(stateHistory).length) {
+    state.hourly = stateHistory;
+    await chrome.storage.local.set({ [AHT_HISTORY_KEY]: state.hourly });
+  }
+
   const changed = reconcilePersistedState(state, nowSeconds());
-  if (changed) await writeState(state);
+  if (changed || !hasPersistentHistory) await writeState(state);
   return state;
 }
 
 async function writeState(state) {
   state.version = STATE_VERSION;
-  await chrome.storage.local.set({ [STORAGE_KEY]: state });
+  state.hourly = normalizeHourlyHistory(state.hourly);
+  await chrome.storage.local.set({
+    [STORAGE_KEY]: state,
+    [AHT_HISTORY_KEY]: state.hourly
+  });
   return state;
 }
 
@@ -132,6 +171,7 @@ function reconcilePersistedState(state, now) {
 
   // A closed queue can lose its pagehide message when the browser or PC is
   // shutting down. Do not let the persisted session continue across that gap.
+  // The completed-task hourly history is intentionally left untouched here.
   if (!state.queuePageOpen && state.tracking && !state.paused && (state.currentTaskId || state.lastPageReadyAt)) {
     if (pauseForQueueLoss(state, now)) changed = true;
   }
@@ -340,6 +380,8 @@ async function updatePageStatus(message, sender) {
     if (!anotherQueueTabOpen) {
       state.lastPageReadyAt = null;
       state.pageVisible = false;
+      // Closing the queue pauses only the active timing state. Completed-task
+      // hourly averages remain in AHT_HISTORY_KEY for the next visit.
       pauseForQueueLoss(state, now);
     }
   }
@@ -352,6 +394,8 @@ async function resetSession() {
   const tracking = state.tracking;
   const latestId = cleanTaskId(state.lastObservedTaskId);
   const now = nowSeconds();
+  // RESET_SESSION is the explicit user-requested clear action. Normal
+  // queue/tab/browser/PC closure never calls this function.
   const fresh = cloneDefaultState();
   fresh.tracking = tracking;
   fresh.autoStartBlocked = state.autoStartBlocked;
@@ -392,6 +436,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (!anotherQueueTabOpen) {
     state.lastPageReadyAt = null;
     state.pageVisible = false;
+    // A tab/browser/PC close must not erase completed-task AHT history.
     pauseForQueueLoss(state, nowSeconds());
   }
   await writeState(state);
